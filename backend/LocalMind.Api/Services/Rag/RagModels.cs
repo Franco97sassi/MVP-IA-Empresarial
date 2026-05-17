@@ -9,12 +9,13 @@ public record RagChunkMatch(
     double VectorScore,
     double KeywordScore,
     double RankScore,
-    string Preview););
+    string Preview);
 
 public record RagSearchResult(IReadOnlyList<RagChunkMatch> Matches)
 {
     public bool HasContext => Matches.Count > 0;
 }
+
 public record RagEvaluationRequest(
     string Query,
     IReadOnlyCollection<int>? ExpectedDocumentIds = null,

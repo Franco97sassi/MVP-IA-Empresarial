@@ -59,10 +59,7 @@ public class ChatService : IChatService
             {
                 Response = await _ollamaService.SendMessageAsync(
                     message,
-                     new RagSearchOptions
-                     {
-                         DocumentIds = documentIds ?? Array.Empty<int>()
-                     },
+                      
                     cancellationToken),
                 UsedRag = false,
                 Route = "chat"
@@ -72,6 +69,10 @@ public class ChatService : IChatService
         var ragResult = await _ragService.SearchAsync(
             userId,
             message,
+            new RagSearchOptions
+            {
+                DocumentIds = documentIds ?? Array.Empty<int>()
+            },
             cancellationToken);
 
         if (!ragResult.HasContext)

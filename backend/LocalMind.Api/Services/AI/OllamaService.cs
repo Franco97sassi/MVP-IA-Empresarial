@@ -104,8 +104,8 @@ public class OllamaService : IOllamaService
     }
 
     public async Task<IReadOnlyList<float>> GenerateEmbeddingAsync(
-        string text,
-        CancellationToken cancellationToken = default)
+     string text,
+     CancellationToken cancellationToken = default)
     {
         var model = _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
 
@@ -116,6 +116,11 @@ public class OllamaService : IOllamaService
         };
 
         var json = JsonSerializer.Serialize(payload);
+
+        Console.WriteLine("=== OLLAMA EMBEDDING REQUEST ===");
+        Console.WriteLine($"Model: {model}");
+        Console.WriteLine($"Text length: {text?.Length}");
+        Console.WriteLine(text);
 
         using var content = new StringContent(
             json,
@@ -132,6 +137,10 @@ public class OllamaService : IOllamaService
         var responseJson = await response.Content.ReadAsStringAsync(
             cancellationToken
         );
+
+        Console.WriteLine("=== OLLAMA EMBEDDING RESPONSE ===");
+        Console.WriteLine($"Status: {(int)response.StatusCode}");
+        Console.WriteLine(responseJson);
 
         response.EnsureSuccessStatusCode();
 
@@ -155,11 +164,8 @@ public class OllamaService : IOllamaService
                 .ToArray();
         }
 
-        throw new InvalidOperationException(
-            "Ollama no devolvió embeddings válidos."
-        );
+        throw new InvalidOperationException("Ollama no devolvió embeddings válidos.");
     }
-
     private int GetConfiguredInt(string key, int fallback)
     {
         return int.TryParse(_configuration[key], out var value)

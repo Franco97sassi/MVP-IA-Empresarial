@@ -1,0 +1,7 @@
+# Arquitectura RAG
+
+El sistema usa recuperación aumentada con generación para responder preguntas
+sobre documentos. El ranking combina similitud vectorial y coincidencia de
+palabras clave. Qdrant puede usarse como vector store real con Docker.
+
+Las fuentes deben mostrar el documento, el chunk usado y un preview del texto.
