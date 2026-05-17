@@ -33,6 +33,13 @@ public class RagSourceResponse
     public int ChunkIndex { get; set; }
 
     public double Score { get; set; }
+    public double VectorScore { get; set; }
+
+    public double KeywordScore { get; set; }
+
+    public double RankScore { get; set; }
 
     public string Preview { get; set; } = string.Empty;
+
+    public string ChunkReference { get; set; } = string.Empty;
 }

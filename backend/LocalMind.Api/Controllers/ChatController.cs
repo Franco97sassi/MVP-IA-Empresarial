@@ -74,6 +74,7 @@ public class ChatController : ControllerBase
             chatResult = await _chatService.GenerateResponseAsync(
                 userId,
                 cleanMessage,
+                request.DocumentIds,
                 cancellationToken);
 
             await SaveMessagesAsync(

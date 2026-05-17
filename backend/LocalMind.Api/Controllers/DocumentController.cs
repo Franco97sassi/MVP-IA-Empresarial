@@ -46,6 +46,23 @@ public class DocumentsController : ControllerBase
         var documents = await _ragService.GetDocumentsAsync(GetUserId(), cancellationToken);
         return Ok(documents);
     }
+    [HttpPost("rag/evaluate")]
+    public async Task<IActionResult> EvaluateRag(
+       IReadOnlyCollection<RagEvaluationRequest> requests,
+       CancellationToken cancellationToken)
+    {
+        if (requests.Count == 0)
+        {
+            return BadRequest(new { message = "Agregá al menos una pregunta de evaluación." });
+        }
+
+        var summary = await _ragService.EvaluateAsync(
+            GetUserId(),
+            requests,
+            cancellationToken);
+
+        return Ok(summary);
+    }
     [HttpDelete("{documentId:int}")]
     public async Task<IActionResult> DeleteDocument(int documentId, CancellationToken cancellationToken)
     {

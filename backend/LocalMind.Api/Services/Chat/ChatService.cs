@@ -28,6 +28,7 @@ public class ChatService : IChatService
     public async Task<ChatResult> GenerateResponseAsync(
         int userId,
         string message,
+                IReadOnlyCollection<int>? documentIds = null,
         CancellationToken cancellationToken = default)
     {
         var toolIntent = _toolIntentDetector.Detect(message);
@@ -58,6 +59,10 @@ public class ChatService : IChatService
             {
                 Response = await _ollamaService.SendMessageAsync(
                     message,
+                     new RagSearchOptions
+                     {
+                         DocumentIds = documentIds ?? Array.Empty<int>()
+                     },
                     cancellationToken),
                 UsedRag = false,
                 Route = "chat"
@@ -116,9 +121,11 @@ public class ChatService : IChatService
                 FileName = match.FileName,
                 ChunkIndex = match.ChunkIndex,
                 Score = Math.Round(match.Score, 4),
-                Preview = match.Content.Length > 220
-                    ? $"{match.Content[..220]}..."
-                    : match.Content
+                VectorScore = Math.Round(match.VectorScore, 4),
+                KeywordScore = Math.Round(match.KeywordScore, 4),
+                RankScore = Math.Round(match.RankScore, 4),
+                Preview = match.Preview,
+                ChunkReference = $"doc:{match.DocumentId}#chunk:{match.ChunkIndex}"
             }).ToList()
         };
     }

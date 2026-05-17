@@ -20,7 +20,11 @@ export interface RagSource {
   fileName: string;
   chunkIndex: number;
   score: number;
+  vectorScore: number;
+  keywordScore: number;
+  rankScore: number;
   preview: string;
+    chunkReference: string;
 }
 
 export interface ChatMessage {
@@ -36,6 +40,7 @@ export interface ChatMessage {
 export interface SendMessageRequest {
   conversationId: number | null;
   message: string;
+  documentIds: number[];
 }
 
 export interface SendMessageResponse {
