@@ -14,8 +14,7 @@ public class RagOptions
 
     public long MaxFileSizeBytes { get; set; } = 10 * 1024 * 1024;
 
-    public string EmbeddingModel { get; set; } = "nomic-embed-text";
-
+    public string EmbeddingModel { get; set; } = "all-minilm";
     public string VectorStoreProvider { get; set; } = "Local";
 
     public string QdrantUrl { get; set; } = "http://localhost:6333";
