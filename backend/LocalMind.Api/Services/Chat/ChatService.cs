@@ -5,6 +5,7 @@ using LocalMind.Api.Services.Rag;
 using LocalMind.Api.Services.Tools;
 using LocalMind.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using LocalMind.Api.Models;
 namespace LocalMind.Api.Services.Chat;
 
 public class ChatService : IChatService
@@ -18,7 +19,8 @@ public class ChatService : IChatService
         IOllamaService ollamaService,
         IRagService ragService,
         IToolIntentDetector toolIntentDetector,
-        IAiToolService aiToolService)
+        IAiToolService aiToolService,
+        AppDbContext context)
     {
         _ollamaService = ollamaService;
         _ragService = ragService;
@@ -26,7 +28,51 @@ public class ChatService : IChatService
         _aiToolService = aiToolService;
         _context = context;
     }
+    private async Task<List<ChatMessage>> LoadRecentHistoryAsync(
+        int userId,
+        int? conversationId,
+        CancellationToken cancellationToken)
+    {
+        if (!conversationId.HasValue)
+        {
+            return new List<ChatMessage>();
+        }
 
+        return await _context.ChatMessages
+            .AsNoTracking()
+            .Where(message =>
+                message.ConversationId == conversationId.Value &&
+                message.Conversation.UserId == userId)
+            .OrderByDescending(message => message.CreatedAt)
+            .Take(8)
+            .OrderBy(message => message.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static string BuildPromptWithHistory(string message, IReadOnlyCollection<ChatMessage> history)
+    {
+        if (history.Count == 0)
+        {
+            return message;
+        }
+
+        var promptBuilder = new StringBuilder();
+        promptBuilder.AppendLine("Historial reciente de la conversacin:");
+
+        foreach (var item in history)
+        {
+            var role = item.Role.Equals("assistant", StringComparison.OrdinalIgnoreCase)
+                ? "Asistente"
+                : "Usuario";
+            promptBuilder.AppendLine($"{role}: {item.Content}");
+        }
+
+        promptBuilder.AppendLine();
+        promptBuilder.AppendLine("Mensaje actual del usuario:");
+        promptBuilder.AppendLine(message);
+
+        return promptBuilder.ToString();
+    }
     public async Task<ChatResult> GenerateResponseAsync(
         int userId,
         string message,
