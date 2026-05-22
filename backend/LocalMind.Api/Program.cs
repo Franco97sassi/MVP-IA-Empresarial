@@ -1,23 +1,24 @@
 using System.Text;
 using LocalMind.Api.Data;
+using LocalMind.Api.Middleware;
 using LocalMind.Api.Services.Ai;
 using LocalMind.Api.Services.Auth;
 using LocalMind.Api.Services.Chat;
+using LocalMind.Api.Services.Metrics;
 using LocalMind.Api.Services.Rag;
+using LocalMind.Api.Services.Security;
 using LocalMind.Api.Services.Tools;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
-using LocalMind.Api.Middleware;
-using LocalMind.Api.Services.Metrics;
-using LocalMind.Api.Services.Security;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers(options =>
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(10 * 1024 * 1024));
-}); 
+});
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(options =>
@@ -47,28 +48,28 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseSqlite(
-        builder.Configuration.GetConnectionString("DefaultConnection")
-    );
+    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
 
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IToolIntentDetector, ToolIntentDetector>();
 builder.Services.AddScoped<IAiToolService, AiToolService>();
+
 builder.Services.Configure<RagOptions>(builder.Configuration.GetSection("Rag"));
 builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<IDocumentTextExtractor, DocumentTextExtractor>();
 builder.Services.AddScoped<ITextChunker, TextChunker>();
 builder.Services.AddScoped<IEmbeddingSerializer, EmbeddingSerializer>();
+
 builder.Services.AddScoped<IMetricsService, MetricsService>();
+
 builder.Services.Configure<ChatSecurityOptions>(builder.Configuration.GetSection("Security:Chat"));
 builder.Services.AddScoped<IInputSafetyService, InputSafetyService>();
+
 builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
 {
-    client.BaseAddress = new Uri(
-        builder.Configuration["Ollama:BaseUrl"] ?? "http://localhost:11434"
-    );
+    client.BaseAddress = new Uri(builder.Configuration["Ollama:BaseUrl"] ?? "http://localhost:11434");
 
     var timeoutSeconds = int.TryParse(builder.Configuration["Ollama:RequestTimeoutSeconds"], out var seconds)
         ? seconds
@@ -76,8 +77,7 @@ builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
 
     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
 });
- 
- 
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -86,16 +86,20 @@ builder.Services.AddCors(options =>
             .WithOrigins(
                 "https://mvp-ia-empresarial.vercel.app",
                 "http://localhost:5173",
-                "http://localhost:3000"
-            )
+                "http://localhost:3000")
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
 });
-//var jwtKey = builder.Configuration["Jwt:Key"]!;
-var jwtKey = builder.Configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT__KEY") ?? string.Empty;
-if (jwtKey.Length < 32) throw new InvalidOperationException("Jwt:Key debe tener al menos 32 caracteres.");
 
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? Environment.GetEnvironmentVariable("JWT__KEY")
+    ?? string.Empty;
+
+if (jwtKey.Length < 32)
+{
+    throw new InvalidOperationException("Jwt:Key debe tener al menos 32 caracteres.");
+}
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -106,18 +110,17 @@ builder.Services
             ValidateIssuer = false,
             ValidateAudience = false,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(jwtKey)
-            )
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
         };
     });
 
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
-var applyMigrationsOnStartup = !bool.TryParse(
-    app.Configuration["Database:ApplyMigrationsOnStartup"],
-    out var shouldApplyMigrations) || shouldApplyMigrations;
+
+var applyMigrationsOnStartup =
+    !bool.TryParse(app.Configuration["Database:ApplyMigrationsOnStartup"], out var shouldApplyMigrations)
+    || shouldApplyMigrations;
 
 if (applyMigrationsOnStartup)
 {
@@ -132,14 +135,18 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-//app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("Frontend");
 app.UseMiddleware<ErrorHandlingMiddleware>();
-app.UseMiddleware<UserRateLimitMiddleware>();
-app.UseMiddleware<AuditMiddleware>();
+
+// Importante: auth antes de middlewares que dependen del usuario autenticado.
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.UseMiddleware<UserRateLimitMiddleware>();
+app.UseMiddleware<AuditMiddleware>();
+
 app.MapGet("/version", () => "VERSION NUEVA");
 app.MapControllers();
+
 app.Run();

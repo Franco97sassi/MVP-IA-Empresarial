@@ -2,6 +2,7 @@ using LocalMind.Api.Data;
 using LocalMind.Api.DTOs;
 using LocalMind.Api.Models;
 using LocalMind.Api.Services.Auth;
+using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -72,4 +73,48 @@ public class AuthController : ControllerBase
             Email = user.Email
         });
     }
+
+
+    [HttpPost("refresh")]
+    public async Task<ActionResult<AuthTokensResponse>> Refresh(RefreshTokenRequest request)
+    {
+        var stored = await _context.RefreshTokens
+            .Include(r => r.User)
+            .FirstOrDefaultAsync(r => r.Token == request.RefreshToken);
+
+        if (stored is null || stored.ExpiresAt < DateTime.UtcNow || stored.RevokedAt != null)
+            return Unauthorized("Refresh token inválido o expirado.");
+
+        // Rotación
+        stored.RevokedAt = DateTime.UtcNow;
+        var newRefresh = RefreshTokenGenerator.Generate();
+
+        _context.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = stored.UserId,
+            Token = newRefresh,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        });
+
+        var access = _jwtService.GenerateToken(stored.User);
+        await _context.SaveChangesAsync();
+
+        return Ok(new AuthTokensResponse
+        {
+            AccessToken = access,
+            RefreshToken = newRefresh
+        });
+    }
+    [HttpPost("revoke")]
+    public async Task<IActionResult> Revoke(RefreshTokenRequest request)
+    {
+        var stored = await _context.RefreshTokens.FirstOrDefaultAsync(r => r.Token == request.RefreshToken);
+        if (stored is null) return NotFound();
+
+        stored.RevokedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return NoContent();
+    }
+
 }

@@ -21,16 +21,14 @@ public class RagService : IRagService
         @"[\p{L}\p{N}]+",
         RegexOptions.Compiled);
 
-    private static readonly HashSet<string> AllowedExtensions = new(
-        StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".pdf",
         ".txt",
         ".md"
     };
 
-    private static readonly HashSet<string> AllowedContentTypes = new(
-        StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/pdf",
         "text/plain",
@@ -68,14 +66,24 @@ public class RagService : IRagService
         CancellationToken cancellationToken = default)
     {
         ValidateFile(file);
+
         var currentDocuments = await _context.Documents.CountAsync(d => d.UserId == userId, cancellationToken);
-        var currentStorage = await _context.Documents.Where(d => d.UserId == userId).SumAsync(d => (long?)d.SizeBytes, cancellationToken) ?? 0;
+        var currentStorage = await _context.Documents
+            .Where(d => d.UserId == userId)
+            .SumAsync(d => (long?)d.SizeBytes, cancellationToken) ?? 0;
 
         if (currentDocuments >= _options.MaxDocumentsPerUser)
-            throw new InvalidOperationException($"Lmite de documentos alcanzado ({_options.MaxDocumentsPerUser}).");
+        {
+            throw new InvalidOperationException(
+                $"Límite de documentos alcanzado ({_options.MaxDocumentsPerUser}).");
+        }
 
         if (currentStorage + file.Length > _options.MaxStorageBytesPerUser)
-            throw new InvalidOperationException("Superaste el lmite de almacenamiento para tu cuenta.");
+        {
+            throw new InvalidOperationException(
+                "Superaste el límite de almacenamiento para tu cuenta.");
+        }
+
         var safeOriginalFileName = SanitizeFileName(file.FileName);
         var extension = Path.GetExtension(safeOriginalFileName).ToLowerInvariant();
         var storedFileName = $"{Guid.NewGuid():N}{extension}";
@@ -94,19 +102,12 @@ public class RagService : IRagService
         {
             await SaveUploadedFileAsync(file, storedFilePath, cancellationToken);
 
-            var extractedText = await _textExtractor.ExtractTextAsync(
-                file,
-                cancellationToken);
-
-            var chunks = _chunker.Split(
-                extractedText,
-                _options.ChunkSize,
-                _options.ChunkOverlap);
+            var extractedText = await _textExtractor.ExtractTextAsync(file, cancellationToken);
+            var chunks = _chunker.Split(extractedText, _options.ChunkSize, _options.ChunkOverlap);
 
             if (chunks.Count == 0)
             {
-                throw new InvalidOperationException(
-                    "No se pudo extraer texto útil del documento.");
+                throw new InvalidOperationException("No se pudo extraer texto útil del documento.");
             }
 
             var document = new Document
@@ -122,6 +123,7 @@ public class RagService : IRagService
             for (var index = 0; index < chunks.Count; index++)
             {
                 var chunkContent = chunks[index];
+
                 var embedding = await _ollamaService.GenerateEmbeddingAsync(
                     chunkContent,
                     cancellationToken);
@@ -129,10 +131,7 @@ public class RagService : IRagService
                 var chunkFileName = $"{chunkFilePrefix}-{index}.txt";
                 var chunkFilePath = Path.Combine(chunksPath, chunkFileName);
 
-                await File.WriteAllTextAsync(
-                    chunkFilePath,
-                    chunkContent,
-                    cancellationToken);
+                await File.WriteAllTextAsync(chunkFilePath, chunkContent, cancellationToken);
 
                 document.Chunks.Add(new DocumentChunk
                 {
@@ -152,7 +151,6 @@ public class RagService : IRagService
         {
             TryDeleteFile(storedFilePath);
             TryDeleteFiles(chunksPath, $"{chunkFilePrefix}-*.txt");
-
             throw;
         }
     }
@@ -220,10 +218,7 @@ public class RagService : IRagService
         }
 
         var storageRoot = GetStorageRoot();
-
-        var storedFilePath = Path.Combine(
-            GetUserDocumentsPath(storageRoot, userId),
-            document.StoredFileName);
+        var storedFilePath = Path.Combine(GetUserDocumentsPath(storageRoot, userId), document.StoredFileName);
 
         var chunksPath = GetUserChunksPath(storageRoot, userId);
         var chunkFilePrefix = Path.GetFileNameWithoutExtension(document.StoredFileName);
@@ -247,8 +242,7 @@ public class RagService : IRagService
             .Where(id => id > 0)
             .ToHashSet() ?? new HashSet<int>();
 
-        var minSimilarityScore =
-            options?.MinSimilarityScore ?? _options.MinSimilarityScore;
+        var minSimilarityScore = options?.MinSimilarityScore ?? _options.MinSimilarityScore;
 
         var maxRetrievedChunks = Math.Max(
             1,
@@ -261,8 +255,7 @@ public class RagService : IRagService
 
         if (documentIds.Count > 0)
         {
-            chunksQuery = chunksQuery.Where(
-                chunk => documentIds.Contains(chunk.DocumentId));
+            chunksQuery = chunksQuery.Where(chunk => documentIds.Contains(chunk.DocumentId));
         }
 
         var chunks = await chunksQuery.ToListAsync(cancellationToken);
@@ -272,9 +265,7 @@ public class RagService : IRagService
             return new RagSearchResult(Array.Empty<RagChunkMatch>());
         }
 
-        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(
-            query,
-            cancellationToken);
+        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, cancellationToken);
 
         var matches = chunks
             .Select(chunk => BuildMatch(query, queryEmbedding, chunk))
@@ -350,37 +341,28 @@ public class RagService : IRagService
             totalQuestions,
             questionsWithContext,
             expectedHits,
-            totalQuestions > 0
-                ? Math.Round((double)questionsWithContext / totalQuestions, 4)
-                : 0,
-            totalQuestions > 0
-                ? Math.Round((double)expectedHits / totalQuestions, 4)
-                : 0,
+            totalQuestions > 0 ? Math.Round((double)questionsWithContext / totalQuestions, 4) : 0,
+            totalQuestions > 0 ? Math.Round((double)expectedHits / totalQuestions, 4) : 0,
             Math.Round(averageTopScore, 4),
             items);
     }
 
     public static double CalculateKeywordScore(string query, string content)
     {
-        var queryTokens = Tokenize(query)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var queryTokens = Tokenize(query).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         if (queryTokens.Count == 0)
         {
             return 0;
         }
 
-        var contentTokens = Tokenize(content)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
+        var contentTokens = Tokenize(content).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var matches = queryTokens.Count(contentTokens.Contains);
 
         return (double)matches / queryTokens.Count;
     }
 
-    public static double CalculateRankScore(
-        double vectorScore,
-        double keywordScore)
+    public static double CalculateRankScore(double vectorScore, double keywordScore)
     {
         return (vectorScore * VectorWeight) + (keywordScore * KeywordWeight);
     }
@@ -426,22 +408,19 @@ public class RagService : IRagService
 
         if (!AllowedExtensions.Contains(extension))
         {
-            throw new InvalidOperationException(
-                "Solo se permiten archivos PDF, TXT o MD.");
+            throw new InvalidOperationException("Solo se permiten archivos PDF, TXT o MD.");
         }
 
         if (!string.IsNullOrWhiteSpace(file.ContentType) &&
             !AllowedContentTypes.Contains(file.ContentType))
         {
-            throw new InvalidOperationException(
-                "El tipo de contenido del archivo no es válido.");
+            throw new InvalidOperationException("El tipo de contenido del archivo no es válido.");
         }
     }
 
     private string GetStorageRoot()
     {
-        return Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, _options.StorageRoot));
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, _options.StorageRoot));
     }
 
     private static string GetUserDocumentsPath(string storageRoot, int userId)
@@ -515,18 +494,14 @@ public class RagService : IRagService
             return 0;
         }
 
-        return Math.Max(
-            0,
-            dot / (Math.Sqrt(firstMagnitude) * Math.Sqrt(secondMagnitude)));
+        return Math.Max(0, dot / (Math.Sqrt(firstMagnitude) * Math.Sqrt(secondMagnitude)));
     }
 
     private static string BuildPreview(string content)
     {
         var normalized = string.Join(
             ' ',
-            content.Split(
-                (char[]?)null,
-                StringSplitOptions.RemoveEmptyEntries));
+            content.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
         if (normalized.Length <= PreviewMaxLength)
         {

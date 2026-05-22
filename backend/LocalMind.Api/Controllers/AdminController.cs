@@ -24,4 +24,32 @@ public class AdminController : ControllerBase
 
         return Ok(new { users, documents, storageBytes = storage, requests24h });
     }
+
+
+    [HttpGet("users/usage")]
+    public async Task<IActionResult> UsersUsage(CancellationToken ct)
+    {
+        var data = await _context.Users
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                documents = u.Documents.Count,
+                storageBytes = u.Documents.Sum(d => (long?)d.SizeBytes) ?? 0
+            })
+            .ToListAsync(ct);
+
+        return Ok(data);
+    }
+
+    [HttpGet("audit/recent")]
+    public async Task<IActionResult> RecentAudit([FromQuery] int take = 100, CancellationToken ct = default)
+    {
+        var logs = await _context.AuditLogs
+            .OrderByDescending(a => a.CreatedAt)
+            .Take(Math.Clamp(take, 1, 500))
+            .ToListAsync(ct);
+
+        return Ok(logs);
+    }
 }
