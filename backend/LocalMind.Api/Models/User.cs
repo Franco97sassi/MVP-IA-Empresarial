@@ -10,7 +10,11 @@ public class User
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    public string Role { get; set; } = "User";
+
     public List<Conversation> Conversations { get; set; } = new();
     public List<Document> Documents { get; set; } = new();
     public List<ChatMetric> ChatMetrics { get; set; } = new();
+
+    public List<RefreshToken> RefreshTokens { get; set; } = new();
 }

@@ -68,7 +68,14 @@ public class RagService : IRagService
         CancellationToken cancellationToken = default)
     {
         ValidateFile(file);
+        var currentDocuments = await _context.Documents.CountAsync(d => d.UserId == userId, cancellationToken);
+        var currentStorage = await _context.Documents.Where(d => d.UserId == userId).SumAsync(d => (long?)d.SizeBytes, cancellationToken) ?? 0;
 
+        if (currentDocuments >= _options.MaxDocumentsPerUser)
+            throw new InvalidOperationException($"Lmite de documentos alcanzado ({_options.MaxDocumentsPerUser}).");
+
+        if (currentStorage + file.Length > _options.MaxStorageBytesPerUser)
+            throw new InvalidOperationException("Superaste el lmite de almacenamiento para tu cuenta.");
         var safeOriginalFileName = SanitizeFileName(file.FileName);
         var extension = Path.GetExtension(safeOriginalFileName).ToLowerInvariant();
         var storedFileName = $"{Guid.NewGuid():N}{extension}";

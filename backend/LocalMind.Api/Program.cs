@@ -92,7 +92,10 @@ builder.Services.AddCors(options =>
             .AllowAnyMethod();
     });
 });
- var jwtKey = builder.Configuration["Jwt:Key"]!;
+//var jwtKey = builder.Configuration["Jwt:Key"]!;
+var jwtKey = builder.Configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT__KEY") ?? string.Empty;
+if (jwtKey.Length < 32) throw new InvalidOperationException("Jwt:Key debe tener al menos 32 caracteres.");
+
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -133,7 +136,8 @@ if (app.Environment.IsDevelopment())
 app.UseRouting();
 app.UseCors("Frontend");
 app.UseMiddleware<ErrorHandlingMiddleware>();
-
+app.UseMiddleware<UserRateLimitMiddleware>();
+app.UseMiddleware<AuditMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapGet("/version", () => "VERSION NUEVA");
