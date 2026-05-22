@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import {
+  deleteConversation,
+  exportConversation,
   getConversation,
   getHistory,
+  renameConversation,
   sendMessageStream,
   type ChatMessage,
   type ConversationHistoryItem,
@@ -79,12 +82,27 @@ export default function ChatPage() {
   );
 
   const [chatError, setChatError] = useState<string | null>(null);
+    const [historySearch, setHistorySearch] = useState("");
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
 
   const canSendMessage = useMemo(() => {
     return message.trim().length > 0 && !isSending && !isStreaming;
   }, [message, isSending, isStreaming]);
+const groupedHistory = useMemo(() => {
+    const filtered = history.filter((item) => {
+      const q = historySearch.trim().toLowerCase();
+      if (!q) return true;
+      return item.title.toLowerCase().includes(q) || String(item.id).includes(q);
+    });
+
+    return filtered.reduce<Record<string, ConversationHistoryItem[]>>((acc, item) => {
+      const key = new Date(item.createdAt).toLocaleDateString();
+      acc[key] = acc[key] ?? [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+  }, [history, historySearch]);
 
   const selectedDocumentsLabel = useMemo(() => {
     if (selectedDocumentIds.length === 0) {
@@ -330,6 +348,30 @@ export default function ChatPage() {
       setStreamAbortController(null);
     }
   };
+ const handleRenameConversation = async (id: number, currentTitle: string) => {
+    const title = window.prompt("Nuevo nombre de la conversación", currentTitle);
+    if (!title) return;
+    await renameConversation(id, title);
+    await loadHistory();
+  };
+
+  const handleDeleteConversation = async (id: number) => {
+    if (!window.confirm("¿Eliminar conversación?")) return;
+    await deleteConversation(id);
+    if (conversationId === id) handleNewConversation();
+    await loadHistory();
+  };
+
+  const handleExportConversation = async (id: number) => {
+    const content = await exportConversation(id);
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `conversation-${id}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("localmind_token");
@@ -342,6 +384,7 @@ export default function ChatPage() {
       <aside className="flex w-80 flex-col border-r border-slate-800 p-4">
         <section className="mb-6">
           <div className="mb-3 flex items-center justify-between gap-2">
+            <input value={historySearch} onChange={(e) => setHistorySearch(e.target.value)} placeholder="Buscar..." className="ml-2 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs" />
             <h2 className="text-sm font-semibold">Conversaciones</h2>
 
             <button
@@ -360,7 +403,11 @@ export default function ChatPage() {
               </p>
             )}
 
-            {history.map((item) => (
+            {Object.entries(groupedHistory).map(([groupDate, items]) => (
+              <div key={groupDate}>
+                <p className="mb-1 text-[11px] uppercase text-slate-500">{groupDate}</p>
+                <div className="space-y-2">
+                {items.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -377,7 +424,15 @@ export default function ChatPage() {
 
                 <p className="mt-1 text-slate-500">
                   {item.createdAt ? new Date(item.createdAt).toLocaleString() : "Sin fecha"}                </p>
+             <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleRenameConversation(item.id, item.title); }} className="text-[11px] text-blue-400">Renombrar</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleExportConversation(item.id); }} className="text-[11px] text-emerald-400">Exportar</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDeleteConversation(item.id); }} className="text-[11px] text-red-400">Eliminar</button>
+                </div>
               </button>
+              ))}
+                </div>
+              </div>
             ))}
           </div>
         </section>

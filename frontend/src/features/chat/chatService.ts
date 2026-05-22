@@ -6,15 +6,6 @@ export interface ConversationResponse {
   messages: ChatMessage[];
 }
 
-export const getConversation = async (
-  conversationId: number
-): Promise<ConversationResponse> => {
-  const response = await api.get<ConversationResponse>(
-    `/chat/history/${conversationId}`
-  );
-
-  return response.data;
-};
 export interface RagSource {
   documentId: number;
   fileName: string;
@@ -24,14 +15,14 @@ export interface RagSource {
   keywordScore: number;
   rankScore: number;
   preview: string;
-    chunkReference: string;
+  chunkReference: string;
 }
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt?: string;
-    sources?: RagSource[];
+  sources?: RagSource[];
   usedTool?: boolean;
   toolName?: string | null;
   route?: string;
@@ -46,7 +37,7 @@ export interface SendMessageRequest {
 export interface SendMessageResponse {
   conversationId: number;
   response: string;
-    usedRag: boolean;
+  usedRag: boolean;
   usedTool: boolean;
   toolName: string | null;
   route: string;
@@ -60,12 +51,45 @@ export interface ConversationHistoryItem {
   createdAt: string;
 }
 
-export const sendMessage = async (
-  data: SendMessageRequest
-): Promise<SendMessageResponse> => {
-  const response = await api.post<SendMessageResponse>("/chat/send", data);
+export const getConversation = async (
+  conversationId: number
+): Promise<ConversationResponse> => {
+  const response = await api.get<ConversationResponse>(
+    `/chat/history/${conversationId}`
+  );
+
   return response.data;
 };
+
+export const getHistory = async (): Promise<ConversationHistoryItem[]> => {
+  const response = await api.get<ConversationHistoryItem[]>("/chat/history");
+  return response.data;
+};
+
+export const renameConversation = async (
+  conversationId: number,
+  title: string
+): Promise<void> => {
+  await api.put(`/chat/history/${conversationId}/title`, { title });
+};
+
+export const deleteConversation = async (
+  conversationId: number
+): Promise<void> => {
+  await api.delete(`/chat/history/${conversationId}`);
+};
+
+export const exportConversation = async (
+  conversationId: number
+): Promise<string> => {
+  const response = await api.get<string>(
+    `/chat/history/${conversationId}/export`,
+    { responseType: "text" as const }
+  );
+
+  return response.data;
+};
+
 export interface StreamHandlers {
   onMeta: (conversationId: number) => void;
   onChunk: (chunk: string) => void;
@@ -78,15 +102,18 @@ export const sendMessageStream = async (
   handlers: StreamHandlers,
   signal?: AbortSignal
 ) => {
-  const response = await fetch(`${import.meta.env.VITE_API_URL}/chat/send-stream`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
-    signal,
-  });
+  const response = await fetch(
+    `${import.meta.env.VITE_API_URL}/chat/send-stream`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(data),
+      signal,
+    }
+  );
 
   if (!response.ok || !response.body) {
     throw new Error("No se pudo iniciar el streaming.");
@@ -94,30 +121,46 @@ export const sendMessageStream = async (
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+
   let buffer = "";
   let currentEvent = "";
 
   while (true) {
     const { value, done } = await reader.read();
+
     if (done) break;
+
     buffer += decoder.decode(value, { stream: true });
+
     const parts = buffer.split("\n\n");
     buffer = parts.pop() ?? "";
+
     for (const part of parts) {
       const lines = part.split("\n");
+
       let dataLine = "";
+
       for (const line of lines) {
-        if (line.startsWith("event: ")) currentEvent = line.slice(7);
-        if (line.startsWith("data: ")) dataLine = line.slice(6);
+        if (line.startsWith("event: ")) {
+          currentEvent = line.slice(7);
+        }
+
+        if (line.startsWith("data: ")) {
+          dataLine = line.slice(6);
+        }
       }
-      if (currentEvent === "meta") handlers.onMeta(JSON.parse(dataLine).conversationId);
-      if (currentEvent === "chunk") handlers.onChunk(dataLine);
-      if (currentEvent === "done") handlers.onDone(JSON.parse(dataLine) as SendMessageResponse);
+
+      if (currentEvent === "meta") {
+        handlers.onMeta(JSON.parse(dataLine).conversationId);
+      }
+
+      if (currentEvent === "chunk") {
+        handlers.onChunk(dataLine);
+      }
+
+      if (currentEvent === "done") {
+        handlers.onDone(JSON.parse(dataLine) as SendMessageResponse);
+      }
     }
   }
-};
-
-export const getHistory = async (): Promise<ConversationHistoryItem[]> => {
-  const response = await api.get<ConversationHistoryItem[]>("/chat/history");
-  return response.data;
 };

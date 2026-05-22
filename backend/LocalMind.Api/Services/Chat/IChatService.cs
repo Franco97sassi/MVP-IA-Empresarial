@@ -6,5 +6,6 @@ public interface IChatService
         int userId,
         string message,
         IReadOnlyCollection<int>? documentIds = null,
+                int? conversationId = null,
         CancellationToken cancellationToken = default);
 }

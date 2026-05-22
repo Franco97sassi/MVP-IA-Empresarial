@@ -3,7 +3,8 @@ using LocalMind.Api.DTOs.Documents;
 using LocalMind.Api.Services.Ai;
 using LocalMind.Api.Services.Rag;
 using LocalMind.Api.Services.Tools;
-
+using LocalMind.Api.Data;
+using Microsoft.EntityFrameworkCore;
 namespace LocalMind.Api.Services.Chat;
 
 public class ChatService : IChatService
@@ -12,7 +13,7 @@ public class ChatService : IChatService
     private readonly IRagService _ragService;
     private readonly IToolIntentDetector _toolIntentDetector;
     private readonly IAiToolService _aiToolService;
-
+    private readonly AppDbContext _context;
     public ChatService(
         IOllamaService ollamaService,
         IRagService ragService,
@@ -23,12 +24,14 @@ public class ChatService : IChatService
         _ragService = ragService;
         _toolIntentDetector = toolIntentDetector;
         _aiToolService = aiToolService;
+        _context = context;
     }
 
     public async Task<ChatResult> GenerateResponseAsync(
         int userId,
         string message,
                 IReadOnlyCollection<int>? documentIds = null,
+                        int? conversationId = null,
         CancellationToken cancellationToken = default)
     {
         var toolIntent = _toolIntentDetector.Detect(message);
@@ -58,8 +61,9 @@ public class ChatService : IChatService
             return new ChatResult
             {
                 Response = await _ollamaService.SendMessageAsync(
-                    message,
-                      
+                                        //message,
+                                        BuildPromptWithHistory(message, await LoadRecentHistoryAsync(userId, conversationId, cancellationToken)),
+
                     cancellationToken),
                 UsedRag = false,
                 Route = "chat"
@@ -80,7 +84,8 @@ public class ChatService : IChatService
             return new ChatResult
             {
                 Response = await _ollamaService.SendMessageAsync(
-                    message,
+                                        //message,
+                                        BuildPromptWithHistory(message, await LoadRecentHistoryAsync(userId, conversationId, cancellationToken)),
                     cancellationToken),
                 UsedRag = false,
                 Route = "chat"

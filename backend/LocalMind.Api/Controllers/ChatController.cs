@@ -9,6 +9,7 @@ using LocalMind.Api.Services.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 using System.Text.Json;
 namespace LocalMind.Api.Controllers;
 
@@ -75,6 +76,7 @@ public class ChatController : ControllerBase
                 userId,
                 cleanMessage,
                 request.DocumentIds,
+                conversation.Id,
                 cancellationToken);
 
             await SaveMessagesAsync(
@@ -129,8 +131,8 @@ public class ChatController : ControllerBase
         Response.Headers.Append("Cache-Control", "no-cache");
 
         var stopwatch = Stopwatch.StartNew();
-        var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, cancellationToken);
-
+        //var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, cancellationToken);
+        var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, conversation.Id, cancellationToken);
         await WriteSseEventAsync("meta", JsonSerializer.Serialize(new { conversationId = conversation.Id }), cancellationToken);
 
         foreach (var chunk in ChunkText(chatResult.Response, 24))
@@ -210,6 +212,75 @@ public class ChatController : ControllerBase
                     message.CreatedAt
                 })
         });
+    }
+    [HttpPut("history/{conversationId:int}/title")]
+    public async Task<IActionResult> RenameConversation(int conversationId, [FromBody] RenameConversationRequest request, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        var title = request.Title?.Trim();
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return BadRequest(new { message = "El ttulo no puede estar vaco." });
+        }
+
+        if (title.Length > ConversationTitleMaxLength)
+        {
+            return BadRequest(new { message = $"El ttulo no puede superar los {ConversationTitleMaxLength} caracteres." });
+        }
+
+        var conversation = await _context.Conversations.FirstOrDefaultAsync(item => item.Id == conversationId && item.UserId == userId, cancellationToken);
+        if (conversation is null) return NotFound();
+
+        conversation.Title = title;
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    [HttpDelete("history/{conversationId:int}")]
+    public async Task<IActionResult> DeleteConversation(int conversationId, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+
+        var conversation = await _context.Conversations
+            .Include(item => item.Messages)
+            .FirstOrDefaultAsync(item => item.Id == conversationId && item.UserId == userId, cancellationToken);
+
+        if (conversation is null) return NotFound();
+
+        _context.ChatMessages.RemoveRange(conversation.Messages);
+        _context.Conversations.Remove(conversation);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return NoContent();
+    }
+
+    [HttpGet("history/{conversationId:int}/export")]
+    public async Task<IActionResult> ExportConversation(int conversationId, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+
+        var conversation = await _context.Conversations
+            .AsNoTracking()
+            .Include(item => item.Messages)
+            .FirstOrDefaultAsync(item => item.Id == conversationId && item.UserId == userId, cancellationToken);
+
+        if (conversation is null) return NotFound();
+
+        var builder = new StringBuilder();
+        builder.AppendLine($"# {conversation.Title}");
+        builder.AppendLine();
+        builder.AppendLine($"Creada: {conversation.CreatedAt:O}");
+        builder.AppendLine();
+
+        foreach (var message in conversation.Messages.OrderBy(m => m.CreatedAt))
+        {
+            builder.AppendLine($"## {message.Role.ToUpperInvariant()} - {message.CreatedAt:O}");
+            builder.AppendLine(message.Content);
+            builder.AppendLine();
+        }
+
+        return File(Encoding.UTF8.GetBytes(builder.ToString()), "text/markdown", $"conversation-{conversation.Id}.md");
     }
 
     private async Task<Conversation?> GetOrCreateConversationAsync(
@@ -332,5 +403,10 @@ public class ChatController : ControllerBase
     private int GetUserId()
     {
         return int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    }
+
+    public sealed class RenameConversationRequest
+    {
+        public string Title { get; set; } = string.Empty;
     }
 }
