@@ -9,7 +9,7 @@ using LocalMind.Api.Services.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
+using System.Text.Json;
 namespace LocalMind.Api.Controllers;
 
 [ApiController]
@@ -112,7 +112,52 @@ public class ChatController : ControllerBase
             throw;
         }
     }
+    [HttpPost("send-stream")]
+    public async Task SendMessageStream(ChatRequest request, CancellationToken cancellationToken)
+    {
+        _inputSafetyService.ValidateChatMessage(request.Message);
+        var userId = GetUserId();
+        var cleanMessage = request.Message.Trim();
+        var conversation = await GetOrCreateConversationAsync(userId, request.ConversationId, cleanMessage, cancellationToken);
+        if (conversation is null)
+        {
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
 
+        Response.Headers.Append("Content-Type", "text/event-stream");
+        Response.Headers.Append("Cache-Control", "no-cache");
+
+        var stopwatch = Stopwatch.StartNew();
+        var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, cancellationToken);
+
+        await WriteSseEventAsync("meta", JsonSerializer.Serialize(new { conversationId = conversation.Id }), cancellationToken);
+
+        foreach (var chunk in ChunkText(chatResult.Response, 24))
+        {
+            await WriteSseEventAsync("chunk", chunk, cancellationToken);
+        }
+
+        await SaveMessagesAsync(conversation.Id, cleanMessage, chatResult.Response, cancellationToken);
+        stopwatch.Stop();
+        await RecordMetricAsync(userId, conversation.Id, cleanMessage, chatResult, stopwatch.ElapsedMilliseconds, null, cancellationToken);
+        await WriteSseEventAsync("done", JsonSerializer.Serialize(BuildChatResponse(conversation.Id, chatResult)), cancellationToken);
+    }
+
+    private async Task WriteSseEventAsync(string eventName, string data, CancellationToken cancellationToken)
+    {
+        await Response.WriteAsync($"event: {eventName}\n", cancellationToken);
+        await Response.WriteAsync($"data: {data}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private static IEnumerable<string> ChunkText(string text, int chunkSize)
+    {
+        for (var i = 0; i < text.Length; i += chunkSize)
+        {
+            yield return text.Substring(i, Math.Min(chunkSize, text.Length - i));
+        }
+    }
     [HttpGet("history")]
     public async Task<IActionResult> GetHistory(CancellationToken cancellationToken)
     {

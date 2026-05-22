@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-
+using System.Runtime.CompilerServices;
 namespace LocalMind.Api.Services.Ai;
 
 public class OllamaService : IOllamaService
@@ -100,6 +100,77 @@ public class OllamaService : IOllamaService
         catch (Exception ex)
         {
             return $"Error al conectar con Ollama: {ex.Message}";
+        }
+    }
+    public IAsyncEnumerable<string> StreamMessageAsync(
+        string message,
+        CancellationToken cancellationToken = default)
+    {
+        return StreamMessageAsync("Respondé siempre en español.", message, cancellationToken);
+    }
+
+    public async IAsyncEnumerable<string> StreamMessageAsync(
+        string systemPrompt,
+        string userMessage,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var model = _configuration["Ollama:Model"] ?? "qwen2.5-coder:7b";
+        var maxOutputTokens = GetConfiguredInt("Ollama:MaxOutputTokens", 512);
+        var temperature = GetConfiguredDouble("Ollama:Temperature", 0.2);
+        var keepAlive = _configuration["Ollama:KeepAlive"] ?? "10m";
+
+        var payload = new
+        {
+            model,
+            messages = new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userMessage }
+            },
+            stream = true,
+            keep_alive = keepAlive,
+            options = new { num_predict = maxOutputTokens, temperature }
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+
+        using var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            using var document = JsonDocument.Parse(line);
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("message", out var messageElement) &&
+                messageElement.TryGetProperty("content", out var contentElement))
+            {
+                var chunk = contentElement.GetString();
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    yield return chunk;
+                }
+            }
+
+            if (root.TryGetProperty("done", out var doneElement) && doneElement.GetBoolean())
+            {
+                yield break;
+            }
         }
     }
 

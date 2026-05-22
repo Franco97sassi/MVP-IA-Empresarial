@@ -66,6 +66,56 @@ export const sendMessage = async (
   const response = await api.post<SendMessageResponse>("/chat/send", data);
   return response.data;
 };
+export interface StreamHandlers {
+  onMeta: (conversationId: number) => void;
+  onChunk: (chunk: string) => void;
+  onDone: (payload: SendMessageResponse) => void;
+}
+
+export const sendMessageStream = async (
+  data: SendMessageRequest,
+  token: string,
+  handlers: StreamHandlers,
+  signal?: AbortSignal
+) => {
+  const response = await fetch(`${import.meta.env.VITE_API_URL}/chat/send-stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error("No se pudo iniciar el streaming.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let currentEvent = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      const lines = part.split("\n");
+      let dataLine = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) currentEvent = line.slice(7);
+        if (line.startsWith("data: ")) dataLine = line.slice(6);
+      }
+      if (currentEvent === "meta") handlers.onMeta(JSON.parse(dataLine).conversationId);
+      if (currentEvent === "chunk") handlers.onChunk(dataLine);
+      if (currentEvent === "done") handlers.onDone(JSON.parse(dataLine) as SendMessageResponse);
+    }
+  }
+};
 
 export const getHistory = async (): Promise<ConversationHistoryItem[]> => {
   const response = await api.get<ConversationHistoryItem[]>("/chat/history");

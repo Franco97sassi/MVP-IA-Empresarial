@@ -3,7 +3,7 @@ import axios from "axios";
 import {
   getConversation,
   getHistory,
-  sendMessage,
+  sendMessageStream,
   type ChatMessage,
   type ConversationHistoryItem,
 } from "./chatService";
@@ -32,57 +32,15 @@ function getRequestErrorMessage(error: unknown, fallback: string) {
     return data;
   }
 
-  if (data && typeof data === "object") {
-    const details = data as {
-      detail?: unknown;
-      message?: unknown;
-      title?: unknown;
-    };
+  if (data?.message) {
+    return data.message;
+  }
 
-    if (typeof details.detail === "string" && details.detail.trim().length > 0) {
-      return details.detail;
-    }
-
-    if (typeof details.message === "string" && details.message.trim().length > 0) {
-      return details.message;
-    }
-
-    if (typeof details.title === "string" && details.title.trim().length > 0) {
-      return details.title;
-    }
+  if (data?.error) {
+    return data.error;
   }
 
   return fallback;
-}
-
-function formatFileSize(sizeBytes: number) {
-  if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
-  }
-
-  if (sizeBytes < 1024 * 1024) {
-    return `${(sizeBytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function isAcceptedFile(file: File) {
-  const fileName = file.name.toLowerCase();
-
-  return ACCEPTED_FILE_EXTENSIONS.some((extension) =>
-    fileName.endsWith(extension)
-  );
-}
-
-function getDocumentsSubtitle(documentsCount: number) {
-  if (documentsCount === 0) {
-    return "PDF, TXT o MD para consultar";
-  }
-
-  return `${documentsCount} documento${documentsCount === 1 ? "" : "s"} indexado${
-    documentsCount === 1 ? "" : "s"
-  }`;
 }
 
 function getRouteBadge(message: ChatMessage) {
@@ -111,6 +69,10 @@ export default function ChatPage() {
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<number[]>([]);
 
   const [isSending, setIsSending] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamAbortController, setStreamAbortController] =
+    useState<AbortController | null>(null);
+
   const [isUploading, setIsUploading] = useState(false);
   const [deletingDocumentId, setDeletingDocumentId] = useState<number | null>(
     null
@@ -121,8 +83,8 @@ export default function ChatPage() {
   const [documentNotice, setDocumentNotice] = useState<string | null>(null);
 
   const canSendMessage = useMemo(() => {
-    return message.trim().length > 0 && !isSending;
-  }, [message, isSending]);
+    return message.trim().length > 0 && !isSending && !isStreaming;
+  }, [message, isSending, isStreaming]);
 
   const selectedDocumentsLabel = useMemo(() => {
     if (selectedDocumentIds.length === 0) {
@@ -151,110 +113,101 @@ export default function ChatPage() {
     });
   }, []);
 
-  const clearDocumentMessages = () => {
-    setDocumentError(null);
-    setDocumentNotice(null);
-  };
-
   const handleNewConversation = () => {
     setConversationId(null);
     setMessages([]);
     setChatError(null);
   };
 
-  const handleOpenConversation = async (selectedConversationId: number) => {
-    setChatError(null);
-
+  const handleSelectConversation = async (id: number) => {
     try {
-      const data = await getConversation(selectedConversationId);
+      setChatError(null);
+
+      const data = await getConversation(id);
 
       setConversationId(data.id);
-      setMessages(
-        data.messages.map((item) => ({
-          role: item.role,
-          content: item.content,
-          createdAt: item.createdAt,
-        }))
-      );
+      setMessages(data.messages);
     } catch (error) {
-      console.error("Error abriendo conversación:", error);
+      console.error("Error cargando conversación:", error);
       setChatError(
-        getRequestErrorMessage(error, "No se pudo abrir la conversación.")
+        getRequestErrorMessage(error, "No se pudo cargar la conversación.")
       );
     }
   };
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  const toggleDocumentSelection = (documentId: number) => {
+    setSelectedDocumentIds((previousIds) => {
+      if (previousIds.includes(documentId)) {
+        return previousIds.filter((id) => id !== documentId);
+      }
 
-    if (!file || isUploading) {
+      return [...previousIds, documentId];
+    });
+  };
+
+  const clearDocumentFilter = () => {
+    setSelectedDocumentIds([]);
+  };
+
+  const handleUploadDocument = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
       return;
     }
 
-    clearDocumentMessages();
+    setDocumentError(null);
+    setDocumentNotice(null);
 
-    if (!isAcceptedFile(file)) {
-      setDocumentError("Formato inválido. Subí un archivo PDF, TXT o MD.");
+    const fileExtension = file.name
+      .slice(file.name.lastIndexOf("."))
+      .toLowerCase();
+
+    if (!ACCEPTED_FILE_EXTENSIONS.includes(fileExtension)) {
+      setDocumentError("Solo se aceptan archivos PDF, TXT o MD.");
+      event.target.value = "";
       return;
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setDocumentError("El archivo supera el límite de 10 MB.");
+      setDocumentError("El archivo no puede superar los 10 MB.");
+      event.target.value = "";
       return;
     }
 
-    setIsUploading(true);
-
     try {
-      const uploadedDocument = await uploadDocument(file);
-
-      setDocuments((currentDocuments) => [
-        uploadedDocument,
-        ...currentDocuments.filter((item) => item.id !== uploadedDocument.id),
-      ]);
-
-      setDocumentNotice(
-        `Documento "${uploadedDocument.originalFileName}" procesado con ${uploadedDocument.chunkCount} chunks.`
-      );
+      setIsUploading(true);
+      await uploadDocument(file);
+      await loadDocuments();
+      setDocumentNotice("Documento subido correctamente.");
     } catch (error) {
       console.error("Error subiendo documento:", error);
       setDocumentError(
-        getRequestErrorMessage(error, "No se pudo procesar el documento.")
+        getRequestErrorMessage(error, "No se pudo subir el documento.")
       );
     } finally {
       setIsUploading(false);
+      event.target.value = "";
     }
   };
 
-  const handleDeleteDocument = async (document: DocumentItem) => {
-    if (deletingDocumentId !== null) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `¿Eliminar "${document.originalFileName}" y sus chunks del índice RAG?`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    clearDocumentMessages();
-    setDeletingDocumentId(document.id);
-
+  const handleDeleteDocument = async (documentId: number) => {
     try {
-      await deleteDocument(document.id);
+      setDeletingDocumentId(documentId);
+      setDocumentError(null);
+      setDocumentNotice(null);
 
-      setDocuments((currentDocuments) =>
-        currentDocuments.filter((item) => item.id !== document.id)
+      await deleteDocument(documentId);
+
+      setSelectedDocumentIds((previousIds) =>
+        previousIds.filter((id) => id !== documentId)
       );
 
-      setSelectedDocumentIds((currentIds) =>
-        currentIds.filter((id) => id !== document.id)
-      );
+      await loadDocuments();
 
-      setDocumentNotice(`Documento "${document.originalFileName}" eliminado.`);
+      setDocumentNotice("Documento eliminado correctamente.");
     } catch (error) {
       console.error("Error eliminando documento:", error);
       setDocumentError(
@@ -263,18 +216,6 @@ export default function ChatPage() {
     } finally {
       setDeletingDocumentId(null);
     }
-  };
-
-  const toggleDocumentFilter = (documentId: number) => {
-    setSelectedDocumentIds((currentIds) =>
-      currentIds.includes(documentId)
-        ? currentIds.filter((id) => id !== documentId)
-        : [...currentIds, documentId]
-    );
-  };
-
-  const clearDocumentFilter = () => {
-    setSelectedDocumentIds([]);
   };
 
   const handleSend = async (event: React.FormEvent) => {
@@ -296,28 +237,64 @@ export default function ChatPage() {
 
     setMessage("");
     setIsSending(true);
+    setIsStreaming(true);
     setChatError(null);
 
+    const controller = new AbortController();
+    setStreamAbortController(controller);
+
+    setMessages((previousMessages) => [
+      ...previousMessages,
+      {
+        role: "assistant",
+        content: "",
+      },
+    ]);
+
     try {
-      const data = await sendMessage({
-        conversationId,
-        message: userMessage,
-        documentIds: selectedDocumentIds,
-      });
+      const token = localStorage.getItem("localmind_token") ?? "";
 
-      setConversationId(data.conversationId);
-
-      setMessages((previousMessages) => [
-        ...previousMessages,
+      await sendMessageStream(
         {
-          role: "assistant",
-          content: data.response,
-          sources: data.sources,
-          usedTool: data.usedTool,
-          toolName: data.toolName,
-          route: data.route,
+          conversationId,
+          message: userMessage,
+          documentIds: selectedDocumentIds,
         },
-      ]);
+        token,
+        {
+          onMeta: (newConversationId) => {
+            setConversationId(newConversationId);
+          },
+          onChunk: (chunk) => {
+            setMessages((previousMessages) => {
+              const next = [...previousMessages];
+              const last = next[next.length - 1];
+
+              if (last?.role === "assistant") {
+                last.content += chunk;
+              }
+
+              return next;
+            });
+          },
+          onDone: (data) => {
+            setMessages((previousMessages) => {
+              const next = [...previousMessages];
+              const last = next[next.length - 1];
+
+              if (last?.role === "assistant") {
+                last.sources = data.sources;
+                last.usedTool = data.usedTool;
+                last.toolName = data.toolName;
+                last.route = data.route;
+              }
+
+              return next;
+            });
+          },
+        },
+        controller.signal
+      );
 
       await loadHistory();
     } catch (error) {
@@ -330,15 +307,27 @@ export default function ChatPage() {
 
       setChatError(errorMessage);
 
-      setMessages((previousMessages) => [
-        ...previousMessages,
-        {
-          role: "assistant",
-          content: errorMessage,
-        },
-      ]);
+      setMessages((previousMessages) => {
+        const next = [...previousMessages];
+        const last = next[next.length - 1];
+
+        if (last?.role === "assistant" && last.content.length === 0) {
+          last.content = errorMessage;
+          return next;
+        }
+
+        return [
+          ...previousMessages,
+          {
+            role: "assistant",
+            content: errorMessage,
+          },
+        ];
+      });
     } finally {
       setIsSending(false);
+      setIsStreaming(false);
+      setStreamAbortController(null);
     }
   };
 
@@ -364,300 +353,231 @@ export default function ChatPage() {
             </button>
           </div>
 
-          <div className="max-h-48 space-y-2 overflow-y-auto">
-            {history.length === 0 ? (
+          <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+            {history.length === 0 && (
               <p className="text-xs text-slate-500">
                 Todavía no hay conversaciones.
               </p>
-            ) : (
-              history.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`block w-full rounded-lg p-2 text-left text-xs hover:bg-slate-800 ${
-                    conversationId === item.id
-                      ? "bg-blue-500/20"
-                      : "bg-slate-900"
-                  }`}
-                  onClick={() => void handleOpenConversation(item.id)}
-                >
-                  <p className="truncate font-medium">{item.title}</p>
-
-                  <p className="text-slate-500">
-                    {new Date(item.createdAt).toLocaleString()}
-                  </p>
-                </button>
-              ))
             )}
+
+            {history.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleSelectConversation(item.id)}
+                className={`rounded-lg border px-3 py-2 text-left text-xs ${
+                  conversationId === item.id
+                    ? "border-blue-500 bg-blue-950/40"
+                    : "border-slate-800 hover:bg-slate-900"
+                }`}
+              >
+                <p className="truncate font-medium text-slate-200">
+                  {item.title || `Conversación #${item.id}`}
+                </p>
+
+                <p className="mt-1 text-slate-500">
+                  {new Date(item.updatedAt).toLocaleString()}
+                </p>
+              </button>
+            ))}
           </div>
         </section>
 
-        <section className="min-h-0 flex-1">
+        <section className="flex-1 overflow-y-auto">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold">Documentos RAG</h2>
+            <h2 className="text-sm font-semibold">Documentos</h2>
 
-              <p className="text-xs text-slate-500">
-                {getDocumentsSubtitle(documents.length)}
-              </p>
-            </div>
-
-            <label className="cursor-pointer rounded bg-emerald-600 px-3 py-2 text-xs font-semibold hover:bg-emerald-700">
-              {isUploading ? "Procesando..." : "Subir"}
-
-              <input
-                type="file"
-                accept=".pdf,.txt,.md,text/plain,application/pdf,text/markdown"
-                onChange={handleUpload}
-                disabled={isUploading}
-                className="hidden"
-              />
-            </label>
+            <button
+              type="button"
+              onClick={clearDocumentFilter}
+              className="text-xs text-blue-400 hover:text-blue-300"
+            >
+              Usar todos
+            </button>
           </div>
 
+          <label className="mb-3 block cursor-pointer rounded-lg border border-dashed border-slate-700 p-3 text-center text-xs text-slate-400 hover:bg-slate-900">
+            {isUploading ? "Subiendo..." : "Subir PDF, TXT o MD"}
+            <input
+              type="file"
+              accept=".pdf,.txt,.md"
+              disabled={isUploading}
+              onChange={handleUploadDocument}
+              className="hidden"
+            />
+          </label>
+
           {documentError && (
-            <p className="mb-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-300">
+            <p className="mb-3 rounded bg-red-950/50 p-2 text-xs text-red-300">
               {documentError}
             </p>
           )}
 
           {documentNotice && (
-            <p className="mb-2 rounded border border-emerald-500/40 bg-emerald-500/10 p-2 text-xs text-emerald-200">
+            <p className="mb-3 rounded bg-emerald-950/50 p-2 text-xs text-emerald-300">
               {documentNotice}
             </p>
           )}
 
-          {documents.length > 0 && (
-            <div className="mb-2 rounded-lg border border-blue-500/20 bg-blue-500/10 p-2 text-xs text-blue-100">
-              <div className="flex items-center justify-between gap-2">
-                <span>Filtro RAG: {selectedDocumentsLabel}</span>
+          <div className="flex flex-col gap-2">
+            {documents.length === 0 && (
+              <p className="text-xs text-slate-500">
+                Todavía no hay documentos cargados.
+              </p>
+            )}
 
-                {selectedDocumentIds.length > 0 && (
+            {documents.map((document) => {
+              const isSelected = selectedDocumentIds.includes(document.id);
+
+              return (
+                <div
+                  key={document.id}
+                  className={`rounded-lg border p-3 text-xs ${
+                    isSelected
+                      ? "border-blue-500 bg-blue-950/40"
+                      : "border-slate-800 bg-slate-900/50"
+                  }`}
+                >
                   <button
                     type="button"
-                    onClick={clearDocumentFilter}
-                    className="text-blue-200 underline-offset-2 hover:underline"
+                    onClick={() => toggleDocumentSelection(document.id)}
+                    className="w-full text-left"
                   >
-                    limpiar
+                    <p className="truncate font-medium text-slate-200">
+                      {document.fileName}
+                    </p>
+
+                    <p className="mt-1 text-slate-500">
+                      {document.chunkCount} chunks
+                    </p>
                   </button>
-                )}
-              </div>
 
-              <p className="mt-1 text-[11px] text-blue-200/80">
-                Si no marcás ninguno, el ranking busca en todo tu índice.
-              </p>
-            </div>
-          )}
-
-          <div className="max-h-[calc(100vh-24rem)] space-y-2 overflow-y-auto pr-1">
-            {documents.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-700 p-3 text-xs text-slate-500">
-                <p>Todavía no subiste documentos.</p>
-
-                <p className="mt-1">
-                  Subí uno para activar respuestas con fuentes RAG.
-                </p>
-              </div>
-            ) : (
-              documents.map((document) => {
-                const isDeleting = deletingDocumentId === document.id;
-                const isSelected = selectedDocumentIds.includes(document.id);
-
-                return (
-                  <article
-                    key={document.id}
-                    className={`rounded-lg p-2 text-xs ${
-                      isSelected
-                        ? "bg-blue-500/15 ring-1 ring-blue-400/30"
-                        : "bg-slate-800"
-                    }`}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteDocument(document.id)}
+                    disabled={deletingDocumentId === document.id}
+                    className="mt-2 text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <label className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleDocumentFilter(document.id)}
-                          className="accent-blue-500"
-                        />
-
-                        Usar
-                      </label>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">
-                          {document.originalFileName}
-                        </p>
-
-                        <p className="text-slate-400">
-                          {document.chunkCount} chunks ·{" "}
-                          {formatFileSize(document.sizeBytes)}
-                        </p>
-
-                        <p className="text-slate-500">
-                          Estado: {document.status}
-                        </p>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteDocument(document)}
-                        disabled={isDeleting}
-                        className="rounded border border-red-500/40 px-2 py-1 text-red-200 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {isDeleting ? "..." : "Eliminar"}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })
-            )}
+                    {deletingDocumentId === document.id
+                      ? "Eliminando..."
+                      : "Eliminar"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </section>
 
         <button
           type="button"
           onClick={handleLogout}
-          className="mt-4 rounded border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:bg-slate-800"
+          className="mt-4 rounded-lg border border-slate-700 px-3 py-2 text-xs hover:bg-slate-800"
         >
           Cerrar sesión
         </button>
       </aside>
 
-      <section className="flex flex-1 flex-col">
+      <section className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-slate-800 p-4">
-          <h1 className="text-lg font-semibold">Chat LocalMind</h1>
+          <h1 className="text-lg font-semibold">LocalMind Chat</h1>
 
           <p className="text-sm text-slate-400">
-            Preguntá sobre tus documentos indexados. Las respuestas RAG muestran
-            ranking, fuentes y previews de chunks.
+            Consultá tus documentos o hacé preguntas generales.
           </p>
         </header>
 
         {chatError && (
-          <p className="m-4 rounded border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+          <div className="border-b border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
             {chatError}
-          </p>
+          </div>
         )}
 
         <section className="flex-1 space-y-4 overflow-y-auto p-4">
           {messages.length === 0 && (
-            <div className="mx-auto mt-20 max-w-xl text-center text-slate-500">
-              <h2 className="text-xl font-semibold text-slate-300">
-                Empezá una consulta
-              </h2>
+            <div className="mx-auto mt-16 max-w-xl text-center text-slate-500">
+              <p className="text-lg font-medium text-slate-300">
+                Empezá una conversación
+              </p>
 
               <p className="mt-2 text-sm">
-                Subí documentos, filtrá por archivo si hace falta y hacé
-                preguntas para obtener respuestas con fuentes RAG.
+                Podés consultar tus documentos cargados o hacer una pregunta
+                general.
               </p>
             </div>
           )}
 
-          {messages.map((item, index) => {
-            const isUserMessage = item.role === "user";
-            const routeBadge = getRouteBadge(item);
+          {messages.map((chatMessage, index) => {
+            const isUser = chatMessage.role === "user";
+            const routeBadge = getRouteBadge(chatMessage);
 
             return (
               <article
-                key={`${item.role}-${item.createdAt ?? index}`}
-                className={`max-w-3xl rounded-2xl p-3 whitespace-pre-wrap ${
-                  isUserMessage ? "ml-auto bg-blue-600" : "mr-auto bg-slate-800"
+                key={index}
+                className={`max-w-3xl rounded-2xl p-4 ${
+                  isUser
+                    ? "ml-auto bg-blue-600 text-white"
+                    : "mr-auto bg-slate-800 text-slate-100"
                 }`}
               >
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-300/80">
-                    {isUserMessage ? "Usuario" : "LocalMind"}
-                  </span>
-
-                  {!isUserMessage && routeBadge && (
-                    <span className="rounded-full bg-slate-950/60 px-2 py-0.5 text-[11px] text-slate-300">
-                      {routeBadge}
-                    </span>
-                  )}
+                <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {chatMessage.content}
                 </div>
 
-                <p>{item.content}</p>
+                {!isUser && routeBadge && (
+                  <div className="mt-3 inline-flex rounded-full bg-slate-950/60 px-2 py-1 text-xs text-slate-300">
+                    {routeBadge}
+                  </div>
+                )}
 
-                {!isUserMessage && item.sources && item.sources.length > 0 && (
-                  <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-emerald-300">
-                        Fuentes RAG usadas ({item.sources.length})
+                {!isUser &&
+                  chatMessage.sources &&
+                  chatMessage.sources.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs font-semibold text-slate-300">
+                        Fuentes usadas
                       </p>
 
-                      <p className="text-[11px] text-slate-500">
-                        Score final = 75% vector + 25% keywords
-                      </p>
-                    </div>
+                      {chatMessage.sources.map((source, sourceIndex) => (
+                        <div
+                          key={sourceIndex}
+                          className="rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-slate-200">
+                                {source.documentName}
+                              </p>
 
-                    {item.sources.map((source) => (
-                      <div
-                        key={`${source.documentId}-${source.chunkIndex}`}
-                        className="rounded-lg bg-slate-900/60 p-2 text-xs text-slate-300"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-medium text-slate-100">
-                            {source.fileName} · {source.chunkReference}
-                          </p>
-
-                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
-                            rank {source.rankScore.toFixed(2)}
-                          </span>
-                        </div>
-
-                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                          <div className="rounded bg-slate-950/50 p-2">
-                            <p className="text-[10px] uppercase text-slate-500">
-                              Vector
-                            </p>
-
-                            <p className="font-semibold text-slate-200">
-                              {source.vectorScore.toFixed(2)}
-                            </p>
-                          </div>
-
-                          <div className="rounded bg-slate-950/50 p-2">
-                            <p className="text-[10px] uppercase text-slate-500">
-                              Keywords
-                            </p>
-
-                            <p className="font-semibold text-slate-200">
-                              {source.keywordScore.toFixed(2)}
-                            </p>
-                          </div>
-
-                          <div className="rounded bg-slate-950/50 p-2">
-                            <p className="text-[10px] uppercase text-slate-500">
-                              Final
-                            </p>
+                              <p className="mt-1 text-slate-500">
+                                Chunk #{source.chunkIndex}
+                              </p>
+                            </div>
 
                             <p className="font-semibold text-slate-200">
                               {source.score.toFixed(2)}
                             </p>
                           </div>
+
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-slate-300 hover:text-white">
+                              Ver preview del chunk usado
+                            </summary>
+
+                            <p className="mt-1 rounded bg-slate-950/70 p-2 text-slate-400">
+                              {source.preview || "Sin preview disponible."}
+                            </p>
+                          </details>
                         </div>
-
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-slate-300 hover:text-white">
-                            Ver preview del chunk usado
-                          </summary>
-
-                          <p className="mt-1 rounded bg-slate-950/70 p-2 text-slate-400">
-                            {source.preview || "Sin preview disponible."}
-                          </p>
-                        </details>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
               </article>
             );
           })}
 
-          {isSending && (
+          {isStreaming && (
             <div className="mr-auto rounded-2xl bg-slate-800 p-3 text-slate-400">
-              Pensando...
+              Generando respuesta...
             </div>
           )}
         </section>
@@ -685,6 +605,15 @@ export default function ChatPage() {
               className="rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Enviar
+            </button>
+
+            <button
+              type="button"
+              onClick={() => streamAbortController?.abort()}
+              disabled={!isStreaming}
+              className="rounded-xl border border-slate-700 px-4 py-3 text-sm disabled:opacity-50"
+            >
+              Cancelar
             </button>
           </div>
         </form>

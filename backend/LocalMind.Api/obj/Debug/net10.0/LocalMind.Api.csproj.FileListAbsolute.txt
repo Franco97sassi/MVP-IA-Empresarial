@@ -164,3 +164,13 @@ C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind
 C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\obj\Debug\net10.0\LocalMind.Api.pdb
 C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\obj\Debug\net10.0\LocalMind.Api.genruntimeconfig.cache
 C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\obj\Debug\net10.0\ref\LocalMind.Api.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Caching.Abstractions.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Caching.Memory.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Configuration.Abstractions.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.DependencyInjection.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.DependencyInjection.Abstractions.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Logging.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Logging.Abstractions.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Options.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\bin\Debug\net10.0\Microsoft.Extensions.Primitives.dll
+C:\Users\Franc\Desktop\ProyectoMVPDesarrolloConIA\localmind-ai\backend\LocalMind.Api\obj\Debug\net10.0\staticwebassets.upToDateCheck.txt
