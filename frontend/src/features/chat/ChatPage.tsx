@@ -376,8 +376,7 @@ export default function ChatPage() {
                 </p>
 
                 <p className="mt-1 text-slate-500">
-                  {new Date(item.updatedAt).toLocaleString()}
-                </p>
+                  {item.createdAt ? new Date(item.createdAt).toLocaleString() : "Sin fecha"}                </p>
               </button>
             ))}
           </div>
@@ -444,8 +443,7 @@ export default function ChatPage() {
                     className="w-full text-left"
                   >
                     <p className="truncate font-medium text-slate-200">
-                      {document.fileName}
-                    </p>
+                      {document.originalFileName}                    </p>
 
                     <p className="mt-1 text-slate-500">
                       {document.chunkCount} chunks
@@ -545,8 +543,7 @@ export default function ChatPage() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium text-slate-200">
-                                {source.documentName}
-                              </p>
+                                {source.fileName ?? "Documento sin nombre"}                              </p>
 
                               <p className="mt-1 text-slate-500">
                                 Chunk #{source.chunkIndex}
@@ -554,8 +551,7 @@ export default function ChatPage() {
                             </div>
 
                             <p className="font-semibold text-slate-200">
-                              {source.score.toFixed(2)}
-                            </p>
+                              {typeof source.score === "number" ? source.score.toFixed(2) : "N/D"}                            </p>
                           </div>
 
                           <details className="mt-2">

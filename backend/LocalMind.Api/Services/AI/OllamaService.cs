@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Runtime.CompilerServices;
+
 namespace LocalMind.Api.Services.Ai;
 
 public class OllamaService : IOllamaService
@@ -41,16 +42,8 @@ public class OllamaService : IOllamaService
             model,
             messages = new[]
             {
-                new
-                {
-                    role = "system",
-                    content = systemPrompt
-                },
-                new
-                {
-                    role = "user",
-                    content = userMessage
-                }
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userMessage }
             },
             stream = false,
             keep_alive = keepAlive,
@@ -80,18 +73,58 @@ public class OllamaService : IOllamaService
                 cancellationToken
             );
 
-            var responseJson = await response.Content.ReadAsStringAsync(
-                cancellationToken
-            );
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                var legacyPayload = new
+                {
+                    model,
+                    prompt = $"{systemPrompt}\n\nUsuario: {userMessage}",
+                    stream = false,
+                    keep_alive = keepAlive,
+                    options = new
+                    {
+                        num_predict = maxOutputTokens,
+                        temperature
+                    }
+                };
 
-            response.EnsureSuccessStatusCode();
+                using var legacyContent = new StringContent(
+                    JsonSerializer.Serialize(legacyPayload),
+                    Encoding.UTF8,
+                    "application/json"
+                );
+
+                response = await _httpClient.PostAsync(
+                    "/api/generate",
+                    legacyContent,
+                    cancellationToken
+                );
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = BuildOllamaErrorDetail(response.StatusCode, responseJson);
+                return $"Error al conectar con Ollama ({_httpClient.BaseAddress}): {detail}";
+            }
 
             using var document = JsonDocument.Parse(responseJson);
 
-            return document.RootElement
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString() ?? "No pude generar una respuesta.";
+            if (document.RootElement.TryGetProperty("message", out var messageElement)
+                && messageElement.TryGetProperty("content", out var contentElement))
+            {
+                return contentElement.GetString()
+                    ?? "No pude generar una respuesta.";
+            }
+
+            if (document.RootElement.TryGetProperty("response", out var responseElement))
+            {
+                return responseElement.GetString()
+                    ?? "No pude generar una respuesta.";
+            }
+
+            return "No pude generar una respuesta.";
         }
         catch (TaskCanceledException ex)
         {
@@ -102,11 +135,16 @@ public class OllamaService : IOllamaService
             return $"Error al conectar con Ollama: {ex.Message}";
         }
     }
+
     public IAsyncEnumerable<string> StreamMessageAsync(
         string message,
         CancellationToken cancellationToken = default)
     {
-        return StreamMessageAsync("Respondé siempre en español.", message, cancellationToken);
+        return StreamMessageAsync(
+            "Respondé siempre en español.",
+            message,
+            cancellationToken
+        );
     }
 
     public async IAsyncEnumerable<string> StreamMessageAsync(
@@ -129,45 +167,72 @@ public class OllamaService : IOllamaService
             },
             stream = true,
             keep_alive = keepAlive,
-            options = new { num_predict = maxOutputTokens, temperature }
+            options = new
+            {
+                num_predict = maxOutputTokens,
+                temperature
+            }
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/api/chat"
+        )
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            Content = new StringContent(
+                JsonSerializer.Serialize(payload),
+                Encoding.UTF8,
+                "application/json"
+            )
         };
 
         using var response = await _httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
+            cancellationToken
+        );
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            var detail = BuildOllamaErrorDetail(response.StatusCode, responseJson);
+            yield return $"Error al conectar con Ollama ({_httpClient.BaseAddress}): {detail}";
+            yield break;
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(
+            cancellationToken
+        );
+
         using var reader = new StreamReader(stream);
 
-        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+        while (!reader.EndOfStream &&
+               !cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken);
+
             if (string.IsNullOrWhiteSpace(line))
             {
                 continue;
             }
 
             using var document = JsonDocument.Parse(line);
+
             var root = document.RootElement;
 
             if (root.TryGetProperty("message", out var messageElement) &&
                 messageElement.TryGetProperty("content", out var contentElement))
             {
                 var chunk = contentElement.GetString();
+
                 if (!string.IsNullOrEmpty(chunk))
                 {
                     yield return chunk;
                 }
             }
 
-            if (root.TryGetProperty("done", out var doneElement) && doneElement.GetBoolean())
+            if (root.TryGetProperty("done", out var doneElement) &&
+                doneElement.GetBoolean())
             {
                 yield break;
             }
@@ -175,10 +240,11 @@ public class OllamaService : IOllamaService
     }
 
     public async Task<IReadOnlyList<float>> GenerateEmbeddingAsync(
-     string text,
-     CancellationToken cancellationToken = default)
+        string text,
+        CancellationToken cancellationToken = default)
     {
-        var model = _configuration["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
+        var model = _configuration["Ollama:EmbeddingModel"]
+            ?? "nomic-embed-text";
 
         var payload = new
         {
@@ -216,6 +282,7 @@ public class OllamaService : IOllamaService
         response.EnsureSuccessStatusCode();
 
         using var document = JsonDocument.Parse(responseJson);
+
         var root = document.RootElement;
 
         if (root.TryGetProperty("embeddings", out var embeddingsElement)
@@ -235,8 +302,45 @@ public class OllamaService : IOllamaService
                 .ToArray();
         }
 
-        throw new InvalidOperationException("Ollama no devolvió embeddings válidos.");
+        throw new InvalidOperationException(
+            "Ollama no devolvió embeddings válidos."
+        );
     }
+
+    private static string BuildOllamaErrorDetail(
+        System.Net.HttpStatusCode statusCode,
+        string responseBody)
+    {
+        var normalizedBody = responseBody?.Trim();
+
+        if (string.IsNullOrWhiteSpace(normalizedBody))
+        {
+            return $"status {(int)statusCode} ({statusCode}).";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(normalizedBody);
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("error", out var errorElement))
+            {
+                var errorMessage = errorElement.GetString();
+
+                if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    return $"status {(int)statusCode} ({statusCode}): {errorMessage}";
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Ollama puede responder texto plano ante algunos errores.
+        }
+
+        return $"status {(int)statusCode} ({statusCode}): {normalizedBody}";
+    }
+
     private int GetConfiguredInt(string key, int fallback)
     {
         return int.TryParse(_configuration[key], out var value)
