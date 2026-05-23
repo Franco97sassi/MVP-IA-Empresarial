@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("LocalMind.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+aaccf645b7093c819a70b47776da05b41764c13f")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+6eee847dd813e35d9d5acd55426c8e018cdb3eb7")]
 [assembly: System.Reflection.AssemblyProductAttribute("LocalMind.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("LocalMind.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
