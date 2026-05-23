@@ -1,13 +1,35 @@
-﻿using LocalMind.Api.Models;
-using System.Security.Claims;
+﻿using System.Security.Claims;
 
-db.AuditLogs.Add(new AuditLog
+namespace LocalMind.Api.Middleware;
+
+public class AuthMiddleware
 {
-    UserId = int.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) ? uid : null,
-    Path = context.Request.Path,
-    Method = context.Request.Method,
-    StatusCode = context.Response.StatusCode,
-    DurationMs = sw.ElapsedMilliseconds,
-    IpAddress = context.Connection.RemoteIpAddress?.ToString(),
-    TraceId = context.TraceIdentifier
-});
+   
+    private readonly RequestDelegate _next;
+
+public AuthMiddleware(RequestDelegate next)
+{
+    _next = next;
+}
+
+public async Task InvokeAsync(HttpContext context)
+{
+    var isAuthEndpoint = context.Request.Path.StartsWithSegments("/api/auth", StringComparison.OrdinalIgnoreCase);
+
+    if (!isAuthEndpoint && context.User?.Identity?.IsAuthenticated == true)
+    {
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Token inválido: no se encontró NameIdentifier."
+            });
+            return;
+        }
+    }
+
+    await _next(context);
+}
+}
