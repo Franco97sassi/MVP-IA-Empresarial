@@ -39,11 +39,21 @@ public class AuthController : ControllerBase
         await _context.SaveChangesAsync();
 
         var token = _jwtService.GenerateToken(user);
+        var refreshToken = RefreshTokenGenerator.Generate();
 
+        _context.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = user.Id,
+            Token = refreshToken,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        });
+
+        await _context.SaveChangesAsync();
         return Ok(new AuthResponse
         {
-            Token = token,
-            Email = user.Email
+            RefreshToken = refreshToken,
+            Email = user.Email,
+            Role = user.Role
         });
     }
 
@@ -65,11 +75,22 @@ public class AuthController : ControllerBase
             return Unauthorized("Credenciales inválidas.");
 
         var token = _jwtService.GenerateToken(user);
+        var refreshToken = RefreshTokenGenerator.Generate();
 
+        _context.RefreshTokens.Add(new RefreshToken
+        {
+            UserId = user.Id,
+            Token = refreshToken,
+            ExpiresAt = DateTime.UtcNow.AddDays(7)
+        });
+
+        await _context.SaveChangesAsync();
         return Ok(new AuthResponse
         {
             Token = token,
-            Email = user.Email
+            RefreshToken = refreshToken,
+            Email = user.Email,
+            Role = user.Role
         });
     }
 
