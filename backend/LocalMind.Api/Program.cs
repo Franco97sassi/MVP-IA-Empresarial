@@ -4,11 +4,14 @@ using LocalMind.Api.Options;
 using LocalMind.Api.Services.Ai;
 using LocalMind.Api.Services.Auth;
 using LocalMind.Api.Services.Chat;
+using LocalMind.Api.Services.FineTuning;
+using LocalMind.Api.Services.Mcp;
 using LocalMind.Api.Services.Metrics;
+using LocalMind.Api.Services.Multimodal;
+using LocalMind.Api.Services.Orchestration;
 using LocalMind.Api.Services.Rag;
 using LocalMind.Api.Services.Security;
 using LocalMind.Api.Services.Tools;
-
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -99,6 +102,13 @@ public class Program
         );
 
         builder.Services.AddScoped<IInputSafetyService, InputSafetyService>();
+        builder.Services.AddScoped<IMcpHostService, McpHostService>();
+        builder.Services.AddScoped<IMcpServer, DocumentSearchMcpServer>();
+        builder.Services.AddScoped<IMcpServer, UserMetricsMcpServer>();
+        builder.Services.AddScoped<IMcpServer, TaskExtractorMcpServer>();
+        builder.Services.AddScoped<IMultiAgentOrchestrator, MultiAgentOrchestrator>();
+        builder.Services.AddScoped<IMultimodalService, MultimodalService>();
+        builder.Services.AddSingleton<IFineTuningService, FineTuningService>();
 
         builder.Services.AddHttpClient<IOllamaService, OllamaService>(client =>
         {
