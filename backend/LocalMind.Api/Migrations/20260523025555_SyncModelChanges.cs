@@ -1,5 +1,7 @@
-﻿using System;
+﻿using LocalMind.Api.Models;
 using Microsoft.EntityFrameworkCore.Migrations;
+using System;
+using System.Text.RegularExpressions;
 
 #nullable disable
 
@@ -58,6 +60,15 @@ namespace LocalMind.Api.Migrations
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
+
+            migrationBuilder.Sql(@"
+    DELETE FROM ""Users""
+    WHERE ""Id"" NOT IN (
+        SELECT MIN(""Id"")
+        FROM ""Users""
+        GROUP BY ""Email""
+    );
+");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Email",
