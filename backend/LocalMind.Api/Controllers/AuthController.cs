@@ -2,11 +2,10 @@ using LocalMind.Api.Data;
 using LocalMind.Api.DTOs;
 using LocalMind.Api.Models;
 using LocalMind.Api.Services.Auth;
-using Microsoft.AspNetCore.Authentication.OAuth;
+using LocalMind.Api.DTOs.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-
-namespace LocalMind.Api.Controllers;
+ namespace LocalMind.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

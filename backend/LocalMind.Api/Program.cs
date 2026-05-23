@@ -1,6 +1,6 @@
-using System.Text;
 using LocalMind.Api.Data;
 using LocalMind.Api.Middleware;
+using LocalMind.Api.Options;
 using LocalMind.Api.Services.Ai;
 using LocalMind.Api.Services.Auth;
 using LocalMind.Api.Services.Chat;
@@ -8,11 +8,13 @@ using LocalMind.Api.Services.Metrics;
 using LocalMind.Api.Services.Rag;
 using LocalMind.Api.Services.Security;
 using LocalMind.Api.Services.Tools;
+
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
-
+using System.Text;
+ 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers(options =>
@@ -55,7 +57,7 @@ builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IToolIntentDetector, ToolIntentDetector>();
 builder.Services.AddScoped<IAiToolService, AiToolService>();
-
+builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection("RateLimit"));
 builder.Services.Configure<RagOptions>(builder.Configuration.GetSection("Rag"));
 builder.Services.AddScoped<IRagService, RagService>();
 builder.Services.AddScoped<IDocumentTextExtractor, DocumentTextExtractor>();

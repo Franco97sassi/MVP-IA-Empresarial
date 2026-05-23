@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Security.Claims;
-
+using LocalMind.Api.Options;
+using Microsoft.Extensions.Options;
 namespace LocalMind.Api.Middleware;
 
 public class UserRateLimitMiddleware
@@ -26,20 +27,20 @@ public class UserRateLimitMiddleware
         var limit = _options.RequestsPerMinute;
 
         var bucket = Requests.GetOrAdd(userId, _ => new List<DateTime>());
-        int remaining;
-
+       var exceeded = false;
+        var remaining = 0;
         lock (bucket)
         {
             bucket.RemoveAll(x => x < windowStart);
 
             if (bucket.Count >= limit)
             {
-                context.Response.StatusCode = 429;
-                context.Response.Headers["Retry-After"] = "60";
-                context.Response.Headers["X-RateLimit-Limit"] = limit.ToString();
-                context.Response.Headers["X-RateLimit-Remaining"] = "0";
-                await context.Response.WriteAsJsonAsync(new { message = "Rate limit excedido." });
-                return;
+                exceeded = true;
+            }
+            else
+            {
+                bucket.Add(now);
+                remaining = Math.Max(0, limit - bucket.Count);
             }
 
             bucket.Add(now);
