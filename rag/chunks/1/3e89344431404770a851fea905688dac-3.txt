@@ -1,0 +1,1 @@
+Stock market platform with real-time quotes and market analysis features. ● TaskFlow MVP: Project and task management system with JWT authentication. ● LocalMind AI: Local AI assistant with RAG and document processing capabilities. ● E-commerce Full Stack: Full-stack e-commerce platform with authentication, cart and dashboard.

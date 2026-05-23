@@ -43,12 +43,20 @@ public class UserRateLimitMiddleware
                 remaining = Math.Max(0, limit - bucket.Count);
             }
 
-            bucket.Add(now);
-            remaining = Math.Max(0, limit - bucket.Count);
+       
         }
 
         context.Response.Headers["X-RateLimit-Limit"] = limit.ToString();
         context.Response.Headers["X-RateLimit-Remaining"] = remaining.ToString();
+        if (exceeded)
+        {
+            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                message = "Rate limit excedido. Intentá de nuevo en unos segundos."
+            });
+            return;
+        }
 
         await _next(context);
     }

@@ -13,7 +13,7 @@ public class RagOptions
     public double MinSimilarityScore { get; set; } = 0.2;
 
     public long MaxFileSizeBytes { get; set; } = 10 * 1024 * 1024;
-    public int MaxDocumentsPerUser { get; set; } = 25;
+    public int MaxDocumentsPerUser { get; set; } = 2;
     public long MaxStorageBytesPerUser { get; set; } = 200 * 1024 * 1024;
     public string EmbeddingModel { get; set; } = "all-minilm";
     public string VectorStoreProvider { get; set; } = "Local";
