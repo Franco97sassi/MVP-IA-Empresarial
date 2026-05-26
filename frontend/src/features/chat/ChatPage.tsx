@@ -537,6 +537,11 @@ const groupedHistory = useMemo(() => {
           <p className="text-sm text-slate-400">
             Consultá tus documentos o hacé preguntas generales.
           </p>
+          <div className="mt-2 flex gap-3 text-xs">
+            <a href="/metrics" className="text-blue-300 hover:text-blue-200">Ver métricas</a>
+            <a href="/admin" className="text-blue-300 hover:text-blue-200">Ver admin</a>
+          </div>
+
         </header>
 
         {chatError && (

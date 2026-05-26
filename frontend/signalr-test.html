@@ -1,4 +1,4 @@
-VITE_API_BASE_URL=https://mvp-ia-backend.runasp.net/api<!doctype html>
+<!doctype html>
 <html>
 <head><meta charset="utf-8"><title>SignalR Test</title></head>
 <body>
@@ -9,7 +9,7 @@ VITE_API_BASE_URL=https://mvp-ia-backend.runasp.net/api<!doctype html>
     const log = (msg) => document.getElementById('log').textContent += msg + "\n";
 
     const connection = new signalR.HubConnectionBuilder()
-      .withUrl("https://localhost:XXXX/hubs/library") // cambia XXXX por tu puerto https
+      .withUrl("http://localhost:5023/hubs/library") // cambia XXXX por tu puerto https
       .withAutomaticReconnect()
       .build();
 
