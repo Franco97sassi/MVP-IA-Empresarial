@@ -20,8 +20,6 @@
 - Roles de usuario y refresh tokens.
 - Tests automatizados básicos de frontend (Vitest) para parsing de streaming SSE.
 
-## Próximos pasos
-
 - Reprocesamiento de documentos desde endpoint dedicado (UX de reindexado).
 - End-to-end tests de frontend (flujo auth + chat + documentos).
 - Observabilidad avanzada (tracing y dashboards operativos).
