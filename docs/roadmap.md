@@ -11,14 +11,17 @@
 - Seguridad básica.
 - Docker local y documentación.
 - Gestión básica de documentos: feedback de carga y eliminación de documentos/chunks del índice RAG.
-
-- RAG más robusto: ranking híbrido, previews de chunks, filtros por documento, umbrales configurables y evaluaciones básicas.
-## Próximos pasos
-
-- Integración plena de Qdrant como vector store activo en producción.
-- Streaming de respuestas.
-- Reprocesamiento de documentos.
+- Integración de Qdrant como proveedor vectorial principal configurable por entorno.
+- Streaming de respuestas por SSE.
+- Integración de Qdrant como proveedor vectorial principal configurable por entorno.
+- Streaming de respuestas por SSE.
 - Exportación de conversaciones.
-- Tests automatizados de frontend.
 - Rate limiting por usuario.
 - Roles de usuario y refresh tokens.
+- Tests automatizados básicos de frontend (Vitest) para parsing de streaming SSE.
+
+## Próximos pasos
+
+- Reprocesamiento de documentos desde endpoint dedicado (UX de reindexado).
+- End-to-end tests de frontend (flujo auth + chat + documentos).
+- Observabilidad avanzada (tracing y dashboards operativos).

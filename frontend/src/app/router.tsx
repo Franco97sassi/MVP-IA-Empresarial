@@ -4,7 +4,7 @@ import RegisterPage from "../features/auth/RegisterPage";
 import ChatPage from "../features/chat/ChatPage";
 import ProtectedRoute from "../components/ProtectedRoute";
 import MetricsPage from "../features/metrics/MetricsPage";
-
+import AdminPage from "../features/admin/AdminPage";
 export const router = createBrowserRouter([
   {
     path: "/",

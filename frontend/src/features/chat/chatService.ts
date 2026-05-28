@@ -1,5 +1,5 @@
 import { api } from "../../services/api";
-
+import { parseSseBuffer } from "./chatSseParser";
 export interface ConversationResponse {
   id: number;
   title: string;
@@ -132,23 +132,12 @@ export const sendMessageStream = async (
 
     buffer += decoder.decode(value, { stream: true });
 
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
+    const { events, rest } = parseSseBuffer(buffer);
+    buffer = rest;
 
-    for (const part of parts) {
-      const lines = part.split("\n");
-
-      let dataLine = "";
-
-      for (const line of lines) {
-        if (line.startsWith("event: ")) {
-          currentEvent = line.slice(7);
-        }
-
-        if (line.startsWith("data: ")) {
-          dataLine = line.slice(6);
-        }
-      }
+    for (const parsed of events) {
+      currentEvent = parsed.event;
+      const dataLine = parsed.data;
 
       if (currentEvent === "meta") {
         handlers.onMeta(JSON.parse(dataLine).conversationId);

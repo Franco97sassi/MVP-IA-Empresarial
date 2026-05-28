@@ -2,8 +2,11 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "allowJs": false,
+"lib": [
+      "ES2020",
+      "DOM",
+      "DOM.Iterable"
+    ],    "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
     "module": "ESNext",
@@ -13,5 +16,11 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ]
 }
