@@ -17,6 +17,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace LocalMind.Api;
 
@@ -127,7 +130,17 @@ public class Program
 
             client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         });
-
+        builder.Services.AddOpenTelemetry()
+            .ConfigureResource(resource => resource.AddService("LocalMind.Api"))
+            .WithTracing(tracing => tracing
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddConsoleExporter())
+            .WithMetrics(metrics => metrics
+                .AddAspNetCoreInstrumentation()
+                .AddRuntimeInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddConsoleExporter());
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("Frontend", policy =>

@@ -63,6 +63,19 @@ public class DocumentsController : ControllerBase
 
         return Ok(summary);
     }
+
+    [HttpPost("{documentId:int}/reindex")]
+    public async Task<IActionResult> ReindexDocument(int documentId, CancellationToken cancellationToken)
+    {
+        var updated = await _ragService.ReindexDocumentAsync(GetUserId(), documentId, cancellationToken);
+        if (updated is null)
+        {
+            return NotFound(new { message = "No se encontró el documento." });
+        }
+
+        return Ok(updated);
+    }
+
     [HttpDelete("{documentId:int}")]
     public async Task<IActionResult> DeleteDocument(int documentId, CancellationToken cancellationToken)
     {

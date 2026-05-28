@@ -31,6 +31,10 @@ public interface IRagService
         int userId,
         int documentId,
         CancellationToken cancellationToken = default);
+    Task<DocumentResponse?> ReindexDocumentAsync(
+       int userId,
+       int documentId,
+       CancellationToken cancellationToken = default);
 
     Task<RagSearchResult> SearchAsync(
         int userId,

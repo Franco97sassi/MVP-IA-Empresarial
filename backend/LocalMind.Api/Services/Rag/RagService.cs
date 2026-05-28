@@ -231,7 +231,78 @@ public class RagService : IRagService
 
         return true;
     }
+    public async Task<DocumentResponse?> ReindexDocumentAsync(
+       int userId,
+       int documentId,
+       CancellationToken cancellationToken = default)
+    {
+        var document = await _context.Documents
+            .Include(item => item.Chunks)
+            .FirstOrDefaultAsync(
+                item => item.Id == documentId && item.UserId == userId,
+                cancellationToken);
 
+        if (document is null)
+        {
+            return null;
+        }
+
+        var storageRoot = GetStorageRoot();
+        var storedFilePath = Path.Combine(GetUserDocumentsPath(storageRoot, userId), document.StoredFileName);
+
+        if (!File.Exists(storedFilePath))
+        {
+            throw new InvalidOperationException("No se encontró el archivo original del documento para reprocesar.");
+        }
+
+        var chunksPath = GetUserChunksPath(storageRoot, userId);
+        var chunkFilePrefix = Path.GetFileNameWithoutExtension(document.StoredFileName);
+
+        await using var stream = File.OpenRead(storedFilePath);
+        IFormFile formFile = new FormFile(stream, 0, stream.Length, "file", document.OriginalFileName)
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = document.ContentType
+        };
+
+        var extractedText = await _textExtractor.ExtractTextAsync(formFile, cancellationToken);
+        var chunks = _chunker.Split(extractedText, _options.ChunkSize, _options.ChunkOverlap);
+
+        if (chunks.Count == 0)
+        {
+            throw new InvalidOperationException("No se pudo extraer texto útil del documento.");
+        }
+
+        _context.DocumentChunks.RemoveRange(document.Chunks);
+        document.Chunks.Clear();
+
+        TryDeleteFiles(chunksPath, $"{chunkFilePrefix}-*.txt");
+
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            var chunkContent = chunks[index];
+            var embedding = await _ollamaService.GenerateEmbeddingAsync(chunkContent, cancellationToken);
+
+            var chunkFileName = $"{chunkFilePrefix}-{index}.txt";
+            var chunkFilePath = Path.Combine(chunksPath, chunkFileName);
+            await File.WriteAllTextAsync(chunkFilePath, chunkContent, cancellationToken);
+
+            document.Chunks.Add(new DocumentChunk
+            {
+                ChunkIndex = index,
+                Content = chunkContent,
+                EmbeddingJson = _embeddingSerializer.Serialize(embedding),
+                SourceFileName = document.OriginalFileName
+            });
+        }
+
+        document.Status = "Processed";
+        document.Error = null;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return ToResponse(document);
+    }
     public async Task<RagSearchResult> SearchAsync(
         int userId,
         string query,
