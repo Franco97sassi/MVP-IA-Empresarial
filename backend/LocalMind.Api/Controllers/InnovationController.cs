@@ -6,7 +6,7 @@ using LocalMind.Api.Services.Ai;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
-
+using LocalMind.Api.Services.Tools;
 namespace LocalMind.Api.Controllers;
 
 [ApiController]
@@ -51,6 +51,10 @@ public class InnovationController : ControllerBase
     [HttpGet("fine-tuning/jobs")]
     public IActionResult ListFtJobs([FromServices] IFineTuningService fineTuning)
         => Ok(fineTuning.ListJobs());
+
+    [HttpGet("tools/schema")]
+    public IActionResult ListToolSchemas([FromServices] IToolDefinitionRegistry registry)
+        => Ok(registry.List());
 }
 
 public record McpToolRequestDto(string ToolName, Dictionary<string, string>? Parameters);

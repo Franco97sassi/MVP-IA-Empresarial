@@ -8,6 +8,9 @@ using LocalMind.Api.Services.FineTuning;
 using LocalMind.Api.Services.Mcp;
 using LocalMind.Api.Services.Metrics;
 using LocalMind.Api.Services.Multimodal;
+using LocalMind.Api.Services.Observability;
+using LocalMind.Api.Services.Prompts;
+using LocalMind.Api.Services.Tokens;
 using LocalMind.Api.Services.Orchestration;
 using LocalMind.Api.Services.Rag;
 using LocalMind.Api.Services.Security;
@@ -81,10 +84,11 @@ public class Program
         });
 
         builder.Services.AddScoped<IJwtService, JwtService>();
+        builder.Services.AddMemoryCache(options => options.SizeLimit = 250_000);
         builder.Services.AddScoped<IChatService, ChatService>();
         builder.Services.AddScoped<IToolIntentDetector, ToolIntentDetector>();
         builder.Services.AddScoped<IAiToolService, AiToolService>();
-
+        builder.Services.AddSingleton<IToolDefinitionRegistry, ToolDefinitionRegistry>();
         builder.Services.Configure<RateLimitOptions>(
             builder.Configuration.GetSection("RateLimit")
         );
@@ -97,9 +101,20 @@ public class Program
         builder.Services.AddScoped<IDocumentTextExtractor, DocumentTextExtractor>();
         builder.Services.AddScoped<ITextChunker, TextChunker>();
         builder.Services.AddScoped<IEmbeddingSerializer, EmbeddingSerializer>();
-
+        builder.Services.AddScoped<IEmbeddingCacheService, EmbeddingCacheService>();
+        builder.Services.AddScoped<LocalVectorStore>();
+        builder.Services.AddScoped<IVectorStoreResolver, VectorStoreResolver>();
+        builder.Services.AddHttpClient<QdrantVectorStore>(client =>
+        {
+            client.BaseAddress = new Uri(
+                builder.Configuration["Rag:QdrantUrl"]
+                ?? "http://localhost:6333");
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
         builder.Services.AddScoped<IMetricsService, MetricsService>();
-
+        builder.Services.AddSingleton<IPromptTemplateService, PromptTemplateService>();
+        builder.Services.AddSingleton<ITokenBudgetService, TokenBudgetService>();
+        builder.Services.AddSingleton<IAiTelemetryService, AiTelemetryService>();
         builder.Services.Configure<ChatSecurityOptions>(
             builder.Configuration.GetSection("Security:Chat")
         );

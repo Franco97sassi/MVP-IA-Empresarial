@@ -3,6 +3,7 @@ using LocalMind.Api.Data;
 using LocalMind.Api.DTOs.Documents;
 using LocalMind.Api.Models;
 using LocalMind.Api.Services.Ai;
+using LocalMind.Api.Services.Observability;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -42,6 +43,9 @@ public class RagService : IRagService
     private readonly IDocumentTextExtractor _textExtractor;
     private readonly ITextChunker _chunker;
     private readonly IEmbeddingSerializer _embeddingSerializer;
+    private readonly IEmbeddingCacheService _embeddingCache;
+    private readonly IVectorStoreResolver _vectorStoreResolver;
+    private readonly IAiTelemetryService _telemetry;
     private readonly RagOptions _options;
 
     public RagService(
@@ -50,6 +54,9 @@ public class RagService : IRagService
         IDocumentTextExtractor textExtractor,
         ITextChunker chunker,
         IEmbeddingSerializer embeddingSerializer,
+        IEmbeddingCacheService embeddingCache,
+        IVectorStoreResolver vectorStoreResolver,
+        IAiTelemetryService telemetry,
         IOptions<RagOptions> options)
     {
         _context = context;
@@ -57,6 +64,9 @@ public class RagService : IRagService
         _textExtractor = textExtractor;
         _chunker = chunker;
         _embeddingSerializer = embeddingSerializer;
+        _embeddingCache = embeddingCache;
+        _vectorStoreResolver = vectorStoreResolver;
+        _telemetry = telemetry;
         _options = options.Value;
     }
 
@@ -67,10 +77,12 @@ public class RagService : IRagService
     {
         ValidateFile(file);
 
-        var currentDocuments = await _context.Documents.CountAsync(d => d.UserId == userId, cancellationToken);
+        var currentDocuments = await _context.Documents
+            .CountAsync(document => document.UserId == userId, cancellationToken);
+
         var currentStorage = await _context.Documents
-            .Where(d => d.UserId == userId)
-            .SumAsync(d => (long?)d.SizeBytes, cancellationToken) ?? 0;
+            .Where(document => document.UserId == userId)
+            .SumAsync(document => (long?)document.SizeBytes, cancellationToken) ?? 0;
 
         if (currentDocuments >= _options.MaxDocumentsPerUser)
         {
@@ -103,7 +115,10 @@ public class RagService : IRagService
             await SaveUploadedFileAsync(file, storedFilePath, cancellationToken);
 
             var extractedText = await _textExtractor.ExtractTextAsync(file, cancellationToken);
-            var chunks = _chunker.Split(extractedText, _options.ChunkSize, _options.ChunkOverlap);
+            var chunks = _chunker.Split(
+                extractedText,
+                _options.ChunkSize,
+                _options.ChunkOverlap);
 
             if (chunks.Count == 0)
             {
@@ -123,10 +138,7 @@ public class RagService : IRagService
             for (var index = 0; index < chunks.Count; index++)
             {
                 var chunkContent = chunks[index];
-
-                var embedding = await _ollamaService.GenerateEmbeddingAsync(
-                    chunkContent,
-                    cancellationToken);
+                var embedding = await GenerateCachedEmbeddingAsync(chunkContent, cancellationToken);
 
                 var chunkFileName = $"{chunkFilePrefix}-{index}.txt";
                 var chunkFilePath = Path.Combine(chunksPath, chunkFileName);
@@ -144,6 +156,8 @@ public class RagService : IRagService
 
             _context.Documents.Add(document);
             await _context.SaveChangesAsync(cancellationToken);
+
+            await UpsertDocumentVectorsAsync(userId, document, cancellationToken);
 
             return ToResponse(document);
         }
@@ -218,7 +232,9 @@ public class RagService : IRagService
         }
 
         var storageRoot = GetStorageRoot();
-        var storedFilePath = Path.Combine(GetUserDocumentsPath(storageRoot, userId), document.StoredFileName);
+        var storedFilePath = Path.Combine(
+            GetUserDocumentsPath(storageRoot, userId),
+            document.StoredFileName);
 
         var chunksPath = GetUserChunksPath(storageRoot, userId);
         var chunkFilePrefix = Path.GetFileNameWithoutExtension(document.StoredFileName);
@@ -226,15 +242,20 @@ public class RagService : IRagService
         _context.Documents.Remove(document);
         await _context.SaveChangesAsync(cancellationToken);
 
+        await _vectorStoreResolver
+            .Resolve()
+            .DeleteDocumentAsync(userId, documentId, cancellationToken);
+
         TryDeleteFile(storedFilePath);
         TryDeleteFiles(chunksPath, $"{chunkFilePrefix}-*.txt");
 
         return true;
     }
+
     public async Task<DocumentResponse?> ReindexDocumentAsync(
-       int userId,
-       int documentId,
-       CancellationToken cancellationToken = default)
+        int userId,
+        int documentId,
+        CancellationToken cancellationToken = default)
     {
         var document = await _context.Documents
             .Include(item => item.Chunks)
@@ -248,25 +269,37 @@ public class RagService : IRagService
         }
 
         var storageRoot = GetStorageRoot();
-        var storedFilePath = Path.Combine(GetUserDocumentsPath(storageRoot, userId), document.StoredFileName);
+        var storedFilePath = Path.Combine(
+            GetUserDocumentsPath(storageRoot, userId),
+            document.StoredFileName);
 
         if (!File.Exists(storedFilePath))
         {
-            throw new InvalidOperationException("No se encontró el archivo original del documento para reprocesar.");
+            throw new InvalidOperationException(
+                "No se encontró el archivo original del documento para reprocesar.");
         }
 
         var chunksPath = GetUserChunksPath(storageRoot, userId);
         var chunkFilePrefix = Path.GetFileNameWithoutExtension(document.StoredFileName);
 
         await using var stream = File.OpenRead(storedFilePath);
-        IFormFile formFile = new FormFile(stream, 0, stream.Length, "file", document.OriginalFileName)
+
+        IFormFile formFile = new FormFile(
+            stream,
+            0,
+            stream.Length,
+            "file",
+            document.OriginalFileName)
         {
             Headers = new HeaderDictionary(),
             ContentType = document.ContentType
         };
 
         var extractedText = await _textExtractor.ExtractTextAsync(formFile, cancellationToken);
-        var chunks = _chunker.Split(extractedText, _options.ChunkSize, _options.ChunkOverlap);
+        var chunks = _chunker.Split(
+            extractedText,
+            _options.ChunkSize,
+            _options.ChunkOverlap);
 
         if (chunks.Count == 0)
         {
@@ -281,10 +314,11 @@ public class RagService : IRagService
         for (var index = 0; index < chunks.Count; index++)
         {
             var chunkContent = chunks[index];
-            var embedding = await _ollamaService.GenerateEmbeddingAsync(chunkContent, cancellationToken);
+            var embedding = await GenerateCachedEmbeddingAsync(chunkContent, cancellationToken);
 
             var chunkFileName = $"{chunkFilePrefix}-{index}.txt";
             var chunkFilePath = Path.Combine(chunksPath, chunkFileName);
+
             await File.WriteAllTextAsync(chunkFilePath, chunkContent, cancellationToken);
 
             document.Chunks.Add(new DocumentChunk
@@ -301,8 +335,15 @@ public class RagService : IRagService
 
         await _context.SaveChangesAsync(cancellationToken);
 
+        await _vectorStoreResolver
+            .Resolve()
+            .DeleteDocumentAsync(userId, documentId, cancellationToken);
+
+        await UpsertDocumentVectorsAsync(userId, document, cancellationToken);
+
         return ToResponse(document);
     }
+
     public async Task<RagSearchResult> SearchAsync(
         int userId,
         string query,
@@ -336,10 +377,42 @@ public class RagService : IRagService
             return new RagSearchResult(Array.Empty<RagChunkMatch>());
         }
 
-        var queryEmbedding = await _ollamaService.GenerateEmbeddingAsync(query, cancellationToken);
+        using var measurement = _telemetry.Measure("rag.search", new Dictionary<string, object?>
+        {
+            ["userId"] = userId,
+            ["documents"] = documentIds.Count,
+            ["candidateChunks"] = chunks.Count
+        });
 
-        var matches = chunks
-            .Select(chunk => BuildMatch(query, queryEmbedding, chunk))
+        var retrievalQuery = _options.EnableQueryRewrite
+            ? RewriteQuery(query)
+            : query;
+
+        var queryEmbedding = await GenerateCachedEmbeddingAsync(
+            retrievalQuery,
+            cancellationToken);
+
+        var vectorStore = _vectorStoreResolver.Resolve();
+
+        var vectorResults = await vectorStore.SearchAsync(
+            queryEmbedding,
+            chunks,
+            new VectorStoreSearchOptions(
+                userId,
+                documentIds,
+                minSimilarityScore,
+                maxRetrievedChunks),
+            cancellationToken);
+
+        var chunksById = chunks.ToDictionary(chunk => chunk.Id);
+
+        var matches = vectorResults
+            .Where(result => chunksById.ContainsKey(result.ChunkId))
+            .Select(result => BuildMatch(
+                query,
+                chunksById[result.ChunkId],
+                result.VectorScore,
+                vectorStore.ProviderName))
             .Where(match => match.Score >= minSimilarityScore)
             .OrderByDescending(match => match.RankScore)
             .ThenByDescending(match => match.VectorScore)
@@ -404,8 +477,48 @@ public class RagService : IRagService
         var totalQuestions = items.Count;
         var questionsWithContext = items.Count(item => item.HasContext);
         var expectedHits = items.Count(item => item.ExpectedDocumentHit);
+
         var averageTopScore = totalQuestions > 0
             ? items.Average(item => item.TopScore)
+            : 0;
+
+        var recallAtK = totalQuestions > 0
+            ? (double)expectedHits / totalQuestions
+            : 0;
+
+        var reciprocalRanks = items.Select(item =>
+        {
+            if (item.Matches.Count == 0)
+            {
+                return 0;
+            }
+
+            var expected = validRequests
+                .First(request => request.Query == item.Query)
+                .ExpectedDocumentIds?
+                .ToHashSet() ?? new HashSet<int>();
+
+            if (expected.Count == 0)
+            {
+                return item.HasContext ? 1 : 0;
+            }
+
+            for (var index = 0; index < item.Matches.Count; index++)
+            {
+                if (expected.Contains(item.Matches[index].DocumentId))
+                {
+                    return 1.0 / (index + 1);
+                }
+            }
+
+            return 0;
+        }).ToList();
+
+        var averageGroundingScore = items.Count > 0
+            ? items.Average(item =>
+                item.Matches.Count == 0
+                    ? 0
+                    : item.Matches.Average(match => match.RankScore))
             : 0;
 
         return new RagEvaluationSummary(
@@ -415,6 +528,9 @@ public class RagService : IRagService
             totalQuestions > 0 ? Math.Round((double)questionsWithContext / totalQuestions, 4) : 0,
             totalQuestions > 0 ? Math.Round((double)expectedHits / totalQuestions, 4) : 0,
             Math.Round(averageTopScore, 4),
+            Math.Round(recallAtK, 4),
+            Math.Round(reciprocalRanks.Count > 0 ? reciprocalRanks.Average() : 0, 4),
+            Math.Round(averageGroundingScore, 4),
             items);
     }
 
@@ -438,14 +554,39 @@ public class RagService : IRagService
         return (vectorScore * VectorWeight) + (keywordScore * KeywordWeight);
     }
 
+    private static string RewriteQuery(string query)
+    {
+        var expansions = new List<string>();
+        var normalized = query.ToLowerInvariant();
+
+        if (normalized.Contains("resumen") || normalized.Contains("resume"))
+        {
+            expansions.Add("síntesis puntos principales ideas clave");
+        }
+
+        if (normalized.Contains("tarea") || normalized.Contains("pendiente"))
+        {
+            expansions.Add("acciones pendientes próximos pasos responsables");
+        }
+
+        if (normalized.Contains("rag") ||
+            normalized.Contains("documento") ||
+            normalized.Contains("fuente"))
+        {
+            expansions.Add("retrieval augmented generation búsqueda semántica chunks embeddings fuentes");
+        }
+
+        return expansions.Count == 0
+            ? query
+            : $"{query} {string.Join(' ', expansions)}";
+    }
+
     private RagChunkMatch BuildMatch(
         string query,
-        IReadOnlyList<float> queryEmbedding,
-        DocumentChunk chunk)
+        DocumentChunk chunk,
+        double vectorScore,
+        string retrievalProvider)
     {
-        var chunkEmbedding = _embeddingSerializer.Deserialize(chunk.EmbeddingJson);
-
-        var vectorScore = CosineSimilarity(queryEmbedding, chunkEmbedding);
         var keywordScore = CalculateKeywordScore(query, chunk.Content);
         var rankScore = CalculateRankScore(vectorScore, keywordScore);
 
@@ -458,7 +599,48 @@ public class RagService : IRagService
             vectorScore,
             keywordScore,
             rankScore,
-            BuildPreview(chunk.Content));
+            BuildPreview(chunk.Content),
+            retrievalProvider);
+    }
+
+    private async Task<IReadOnlyList<float>> GenerateCachedEmbeddingAsync(
+        string text,
+        CancellationToken cancellationToken)
+    {
+        var model = _options.EmbeddingModel;
+
+        using var measurement = _telemetry.Measure("embedding.generate", new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["characters"] = text.Length
+        });
+
+        return await _embeddingCache.GetOrCreateAsync(
+            model,
+            text,
+            ct => _ollamaService.GenerateEmbeddingAsync(text, ct),
+            cancellationToken);
+    }
+
+    private async Task UpsertDocumentVectorsAsync(
+        int userId,
+        Document document,
+        CancellationToken cancellationToken)
+    {
+        var items = document.Chunks
+            .Select(chunk => new VectorStoreUpsertItem(
+                userId,
+                document.Id,
+                chunk.Id,
+                chunk.SourceFileName,
+                chunk.ChunkIndex,
+                chunk.Content,
+                _embeddingSerializer.Deserialize(chunk.EmbeddingJson)))
+            .ToList();
+
+        await _vectorStoreResolver
+            .Resolve()
+            .UpsertAsync(items, cancellationToken);
     }
 
     private void ValidateFile(IFormFile file)
@@ -538,34 +720,6 @@ public class RagService : IRagService
             ChunkCount = document.Chunks.Count,
             CreatedAt = document.CreatedAt
         };
-    }
-
-    private static double CosineSimilarity(
-        IReadOnlyList<float> first,
-        IReadOnlyList<float> second)
-    {
-        if (first.Count == 0 || second.Count == 0 || first.Count != second.Count)
-        {
-            return 0;
-        }
-
-        double dot = 0;
-        double firstMagnitude = 0;
-        double secondMagnitude = 0;
-
-        for (var index = 0; index < first.Count; index++)
-        {
-            dot += first[index] * second[index];
-            firstMagnitude += first[index] * first[index];
-            secondMagnitude += second[index] * second[index];
-        }
-
-        if (firstMagnitude == 0 || secondMagnitude == 0)
-        {
-            return 0;
-        }
-
-        return Math.Max(0, dot / (Math.Sqrt(firstMagnitude) * Math.Sqrt(secondMagnitude)));
     }
 
     private static string BuildPreview(string content)

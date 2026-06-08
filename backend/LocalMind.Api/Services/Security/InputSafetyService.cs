@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Options;
-
+using System.Text.RegularExpressions;
 namespace LocalMind.Api.Services.Security;
 
 public class InputSafetyService : IInputSafetyService
@@ -32,6 +32,16 @@ public class InputSafetyService : IInputSafetyService
         {
             throw new InvalidOperationException("El mensaje fue bloqueado por seguridad básica de prompt injection.");
         }
+    }
+    public string RedactSensitiveData(string value)
+    {
+        var redacted = value;
+        foreach (var pattern in _options.SensitiveDataPatterns)
+        {
+            redacted = Regex.Replace(redacted, pattern, "[DATO_SENSIBLE]", RegexOptions.IgnoreCase);
+        }
+
+        return redacted;
     }
     private static string NormalizeForSafetyComparison(string value)
     {

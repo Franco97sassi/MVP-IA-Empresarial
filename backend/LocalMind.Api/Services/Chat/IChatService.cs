@@ -6,6 +6,12 @@ public interface IChatService
         int userId,
         string message,
         IReadOnlyCollection<int>? documentIds = null,
-                int? conversationId = null,
+int? conversationId = null,
         CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<string> StreamResponseAsync(
+        int userId,
+        string message,
+        IReadOnlyCollection<int>? documentIds = null,
+        int? conversationId = null, CancellationToken cancellationToken = default);
 }

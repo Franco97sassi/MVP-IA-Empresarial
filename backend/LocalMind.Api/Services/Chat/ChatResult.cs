@@ -16,4 +16,10 @@ public class ChatResult
     public int ChunksUsed { get; set; }
 
     public IReadOnlyList<RagSourceResponse> Sources { get; set; } = Array.Empty<RagSourceResponse>();
+
+    public string? PromptName { get; set; }
+
+    public string? PromptVersion { get; set; }
+
+    public int ApproxInputTokens { get; set; }
 }

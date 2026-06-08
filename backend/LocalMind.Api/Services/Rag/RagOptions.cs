@@ -15,9 +15,9 @@ public class RagOptions
     public long MaxFileSizeBytes { get; set; } = 10 * 1024 * 1024;
     public int MaxDocumentsPerUser { get; set; } = 2;
     public long MaxStorageBytesPerUser { get; set; } = 200 * 1024 * 1024;
-    public string EmbeddingModel { get; set; } = "all-minilm";
+    public string EmbeddingModel { get; set; } = "nomic-embed-text";
     public string VectorStoreProvider { get; set; } = "Local";
-
+    public bool EnableQueryRewrite { get; set; } = true;
     public string QdrantUrl { get; set; } = "http://localhost:6333";
 
     public string QdrantCollection { get; set; } = "localmind_chunks";

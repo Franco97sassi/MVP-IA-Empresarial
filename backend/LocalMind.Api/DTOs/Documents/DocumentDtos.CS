@@ -42,4 +42,6 @@ public class RagSourceResponse
     public string Preview { get; set; } = string.Empty;
 
     public string ChunkReference { get; set; } = string.Empty;
+
+    public string RetrievalProvider { get; set; } = "Local";
 }

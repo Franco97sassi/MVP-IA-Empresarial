@@ -9,7 +9,8 @@ public record RagChunkMatch(
     double VectorScore,
     double KeywordScore,
     double RankScore,
-    string Preview);
+    string Preview,
+    string RetrievalProvider = "Local");
 
 public record RagSearchResult(IReadOnlyList<RagChunkMatch> Matches)
 {
@@ -39,4 +40,7 @@ public record RagEvaluationSummary(
     double ContextCoverage,
     double ExpectedHitRate,
     double AverageTopScore,
+     double RecallAtK,
+    double MeanReciprocalRank,
+    double AverageGroundingScore,
     IReadOnlyList<RagEvaluationItem> Items);

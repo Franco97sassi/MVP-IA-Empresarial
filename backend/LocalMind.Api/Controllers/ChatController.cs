@@ -51,8 +51,7 @@ public class ChatController : ControllerBase
         _inputSafetyService.ValidateChatMessage(request.Message);
 
         var userId = GetUserId();
-        var cleanMessage = request.Message.Trim();
-
+        var cleanMessage = _inputSafetyService.RedactSensitiveData(request.Message.Trim());
         var conversation = await GetOrCreateConversationAsync(
             userId,
             request.ConversationId,
@@ -119,7 +118,7 @@ public class ChatController : ControllerBase
     {
         _inputSafetyService.ValidateChatMessage(request.Message);
         var userId = GetUserId();
-        var cleanMessage = request.Message.Trim();
+        var cleanMessage = _inputSafetyService.RedactSensitiveData(request.Message.Trim());
         var conversation = await GetOrCreateConversationAsync(userId, request.ConversationId, cleanMessage, cancellationToken);
         if (conversation is null)
         {
@@ -133,11 +132,37 @@ public class ChatController : ControllerBase
         var stopwatch = Stopwatch.StartNew();
         //var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, cancellationToken);
         var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, conversation.Id, cancellationToken);
-        await WriteSseEventAsync("meta", JsonSerializer.Serialize(new { conversationId = conversation.Id }), cancellationToken);
-
-        foreach (var chunk in ChunkText(chatResult.Response, 24))
+        await WriteSseEventAsync("meta", JsonSerializer.Serialize(new
         {
-            await WriteSseEventAsync("chunk", chunk, cancellationToken);
+            conversationId = conversation.Id,
+            route = chatResult.Route,
+            usedRag = chatResult.UsedRag,
+            usedTool = chatResult.UsedTool,
+            chunksUsed = chatResult.ChunksUsed,
+            promptName = chatResult.PromptName,
+            promptVersion = chatResult.PromptVersion
+        }), cancellationToken);
+
+        if (chatResult.UsedRag || chatResult.UsedTool)
+        {
+            foreach (var chunk in ChunkText(chatResult.Response, 24))
+            {
+                await WriteSseEventAsync("chunk", chunk, cancellationToken);
+            }
+        }
+        else
+        {
+            var streamedResponse = new StringBuilder();
+            await foreach (var chunk in _chatService.StreamResponseAsync(userId, cleanMessage, request.DocumentIds, conversation.Id, cancellationToken))
+            {
+                streamedResponse.Append(chunk);
+                await WriteSseEventAsync("chunk", chunk, cancellationToken);
+            }
+
+            if (streamedResponse.Length > 0)
+            {
+                chatResult.Response = streamedResponse.ToString();
+            }
         }
 
         await SaveMessagesAsync(conversation.Id, cleanMessage, chatResult.Response, cancellationToken);
@@ -354,7 +379,7 @@ public class ChatController : ControllerBase
                 ConversationId = conversationId,
                 ModelUsed = _configuration["Ollama:Model"] ?? "qwen2.5-coder:7b",
                 ResponseTimeMs = elapsedMs,
-                ApproxTokens = EstimateTokens(userMessage, chatResult?.Response),
+                ApproxTokens = (chatResult?.ApproxInputTokens ?? EstimateTokens(userMessage, null)) + EstimateTokens(string.Empty, chatResult?.Response),
                 UsedRag = chatResult?.UsedRag ?? false,
                 UsedTool = chatResult?.UsedTool ?? false,
                 ToolName = chatResult?.ToolName,
@@ -382,7 +407,10 @@ public class ChatController : ControllerBase
             toolName = chatResult.ToolName,
             route = chatResult.Route,
             chunksUsed = chatResult.ChunksUsed,
-            sources = chatResult.Sources
+            sources = chatResult.Sources,
+            promptName = chatResult.PromptName,
+            promptVersion = chatResult.PromptVersion,
+            approxInputTokens = chatResult.ApproxInputTokens
         };
     }
 
