@@ -19,4 +19,6 @@ obj/
 
 # Environment variables
 .env
-.env.*
+.env.***/.vs/
+
+**/.vs/

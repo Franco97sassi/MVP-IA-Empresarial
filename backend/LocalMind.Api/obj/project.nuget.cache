@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "jAhINjLgs10=",
+  "dgSpecHash": "i6mVAVqoSr0=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Franc\\Desktop\\ProyectoMVPDesarrolloConIA\\localmind-ai\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+  "projectFilePath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Franc\\.nuget\\packages\\bcrypt.net-next\\4.1.0\\bcrypt.net-next.4.1.0.nupkg.sha512",
     "C:\\Users\\Franc\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
@@ -69,10 +69,22 @@
       "code": "NU1902",
       "level": "Warning",
       "message": "El paquete \"OpenTelemetry.Api\" 1.9.0 tiene una vulnerabilidad de gravedad moderada conocida, https://github.com/advisories/GHSA-g94r-2vxg-569j",
-      "projectPath": "C:\\Users\\Franc\\Desktop\\ProyectoMVPDesarrolloConIA\\localmind-ai\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+      "projectPath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
       "warningLevel": 1,
-      "filePath": "C:\\Users\\Franc\\Desktop\\ProyectoMVPDesarrolloConIA\\localmind-ai\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+      "filePath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
       "libraryId": "OpenTelemetry.Api",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    },
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "message": "El paquete \"SQLitePCLRaw.lib.e_sqlite3\" 2.1.11 tiene una vulnerabilidad de gravedad alta conocida, https://github.com/advisories/GHSA-2m69-gcr7-jv3q",
+      "projectPath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+      "libraryId": "SQLitePCLRaw.lib.e_sqlite3",
       "targetGraphs": [
         "net10.0"
       ]

@@ -3730,11 +3730,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Franc\\Desktop\\ProyectoMVPDesarrolloConIA\\localmind-ai\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+      "projectUniqueName": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
       "projectName": "LocalMind.Api",
-      "projectPath": "C:\\Users\\Franc\\Desktop\\ProyectoMVPDesarrolloConIA\\localmind-ai\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
+      "projectPath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\LocalMind.Api.csproj",
       "packagesPath": "C:\\Users\\Franc\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Franc\\Desktop\\ProyectoMVPDesarrolloConIA\\localmind-ai\\backend\\LocalMind.Api\\obj\\",
+      "outputPath": "C:\\Users\\Franc\\Desktop\\IA\\MVP-IA-Empresarial\\backend\\LocalMind.Api\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -4264,6 +4264,16 @@
       "warningLevel": 1,
       "message": "El paquete \"OpenTelemetry.Api\" 1.9.0 tiene una vulnerabilidad de gravedad moderada conocida, https://github.com/advisories/GHSA-g94r-2vxg-569j",
       "libraryId": "OpenTelemetry.Api",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    },
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "El paquete \"SQLitePCLRaw.lib.e_sqlite3\" 2.1.11 tiene una vulnerabilidad de gravedad alta conocida, https://github.com/advisories/GHSA-2m69-gcr7-jv3q",
+      "libraryId": "SQLitePCLRaw.lib.e_sqlite3",
       "targetGraphs": [
         "net10.0"
       ]

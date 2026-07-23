@@ -1,4 +1,4 @@
-import { api } from "../../services/api";
+ import { api, apiBaseUrl } from "../../services/api";
 import { parseSseBuffer } from "./chatSseParser";
 export interface ConversationResponse {
   id: number;
@@ -103,8 +103,8 @@ export const sendMessageStream = async (
   signal?: AbortSignal
 ) => {
   const response = await fetch(
-    `${import.meta.env.VITE_API_URL}/chat/send-stream`,
-    {
+    `${apiBaseUrl}/chat/send-stream`,
+        {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

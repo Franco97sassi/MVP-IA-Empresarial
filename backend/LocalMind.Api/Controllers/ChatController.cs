@@ -143,26 +143,11 @@ public class ChatController : ControllerBase
             promptVersion = chatResult.PromptVersion
         }), cancellationToken);
 
-        if (chatResult.UsedRag || chatResult.UsedTool)
+        foreach (var chunk in ChunkText(chatResult.Response, 24))
         {
-            foreach (var chunk in ChunkText(chatResult.Response, 24))
-            {
-                await WriteSseEventAsync("chunk", chunk, cancellationToken);
-            }
-        }
-        else
-        {
-            var streamedResponse = new StringBuilder();
-            await foreach (var chunk in _chatService.StreamResponseAsync(userId, cleanMessage, request.DocumentIds, conversation.Id, cancellationToken))
-            {
-                streamedResponse.Append(chunk);
-                await WriteSseEventAsync("chunk", chunk, cancellationToken);
-            }
-
-            if (streamedResponse.Length > 0)
-            {
-                chatResult.Response = streamedResponse.ToString();
-            }
+            await WriteSseEventAsync("chunk", chunk, cancellationToken);
+       
+           
         }
 
         await SaveMessagesAsync(conversation.Id, cleanMessage, chatResult.Response, cancellationToken);
