@@ -130,32 +130,37 @@ public class ChatController : ControllerBase
         Response.Headers.Append("Cache-Control", "no-cache");
 
         var stopwatch = Stopwatch.StartNew();
-        //var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, cancellationToken);
-        var chatResult = await _chatService.GenerateResponseAsync(userId, cleanMessage, request.DocumentIds, conversation.Id, cancellationToken);
         await WriteSseEventAsync("meta", JsonSerializer.Serialize(new
         {
-            conversationId = conversation.Id,
-            route = chatResult.Route,
-            usedRag = chatResult.UsedRag,
-            usedTool = chatResult.UsedTool,
-            chunksUsed = chatResult.ChunksUsed,
-            promptName = chatResult.PromptName,
-            promptVersion = chatResult.PromptVersion
+            conversationId = conversation.Id
         }), cancellationToken);
 
-        foreach (var chunk in ChunkText(chatResult.Response, 24))
+        var responseBuilder = new StringBuilder();
+
+        await foreach (var chunk in _chatService.StreamResponseAsync(
+            userId,
+            cleanMessage,
+            request.DocumentIds,
+            conversation.Id,
+            cancellationToken))
         {
+            responseBuilder.Append(chunk);
             await WriteSseEventAsync("chunk", chunk, cancellationToken);
-       
-           
         }
 
-        await SaveMessagesAsync(conversation.Id, cleanMessage, chatResult.Response, cancellationToken);
+        var responseText = responseBuilder.ToString();
+        var chatResult = new ChatResult
+        {
+            Response = responseText,
+            Route = request.DocumentIds?.Count > 0 ? "rag" : "chat",
+            UsedRag = request.DocumentIds?.Count > 0
+        };
+
+        await SaveMessagesAsync(conversation.Id, cleanMessage, responseText, cancellationToken);
         stopwatch.Stop();
         await RecordMetricAsync(userId, conversation.Id, cleanMessage, chatResult, stopwatch.ElapsedMilliseconds, null, cancellationToken);
         await WriteSseEventAsync("done", JsonSerializer.Serialize(BuildChatResponse(conversation.Id, chatResult)), cancellationToken);
     }
-
     private async Task WriteSseEventAsync(string eventName, string data, CancellationToken cancellationToken)
     {
         await Response.WriteAsync($"event: {eventName}\n", cancellationToken);

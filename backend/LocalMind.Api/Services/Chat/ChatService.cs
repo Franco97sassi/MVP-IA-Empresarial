@@ -158,16 +158,16 @@ public class ChatService : IChatService
     }
 
     public async IAsyncEnumerable<string> StreamResponseAsync(
-        int userId,
-        string message,
-        IReadOnlyCollection<int>? documentIds = null,
-        int? conversationId = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+     int userId,
+     string message,
+     IReadOnlyCollection<int>? documentIds = null,
+     int? conversationId = null,
+     [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var toolIntent = _toolIntentDetector.Detect(message);
         var isDocumentQuestion = _toolIntentDetector.IsDocumentQuestion(message);
 
-        if (toolIntent is not ToolIntent.None || isDocumentQuestion)
+        if (toolIntent is not ToolIntent.None && !isDocumentQuestion)
         {
             var fallback = await GenerateResponseAsync(
                 userId,
@@ -187,21 +187,74 @@ public class ChatService : IChatService
         var history = await LoadRecentHistoryAsync(userId, conversationId, cancellationToken);
         var maxHistoryTokens = GetConfiguredInt("Ollama:MaxHistoryTokens", 1200);
 
-        var prompt = _promptTemplateService.Render("chat.default");
-        var userPrompt = _tokenBudgetService.BuildHistoryPrompt(
+        if (!isDocumentQuestion)
+        {
+            var chatPrompt = _promptTemplateService.Render("chat.default");
+            var chatUserPrompt = _tokenBudgetService.BuildHistoryPrompt(
+                message,
+                history,
+                maxHistoryTokens);
+
+            await foreach (var chunk in _ollamaService.StreamMessageAsync(
+                chatPrompt.Content,
+                chatUserPrompt,
+                cancellationToken))
+            {
+                yield return chunk;
+            }
+
+            yield break;
+        }
+
+        var ragResult = await _ragService.SearchAsync(
+            userId,
             message,
-            history,
-            maxHistoryTokens);
+            new RagSearchOptions
+            {
+                DocumentIds = documentIds ?? Array.Empty<int>()
+            },
+            cancellationToken);
+
+        if (!ragResult.HasContext)
+        {
+            var noContextPrompt = _promptTemplateService.Render("rag.no-context");
+            var noContextUserPrompt = _tokenBudgetService.BuildHistoryPrompt(
+                message,
+                history,
+                maxHistoryTokens);
+
+            await foreach (var chunk in _ollamaService.StreamMessageAsync(
+                noContextPrompt.Content,
+                noContextUserPrompt,
+                cancellationToken))
+            {
+                yield return chunk;
+            }
+
+            yield break;
+        }
+
+        var contextBuilder = BuildRagContext(ragResult.Matches);
+        var ragPrompt = _promptTemplateService.Render("rag.answer");
+        var ragUserPrompt =
+            $"Contexto de documentos:\n{contextBuilder}\n\nPregunta del usuario:\n{message}";
 
         await foreach (var chunk in _ollamaService.StreamMessageAsync(
-            prompt.Content,
-            userPrompt,
+            ragPrompt.Content,
+            ragUserPrompt,
             cancellationToken))
         {
             yield return chunk;
         }
-    }
 
+        var sources = BuildSources(ragResult.Matches);
+        var sourceSection = EnsureSourcesSection(string.Empty, sources);
+
+        if (!string.IsNullOrWhiteSpace(sourceSection))
+        {
+            yield return $"\n\n{sourceSection}";
+        }
+    }
     private async Task<List<ChatMessage>> LoadRecentHistoryAsync(
         int userId,
         int? conversationId,
